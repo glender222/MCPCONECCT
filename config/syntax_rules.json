@@ -1,0 +1,77 @@
+{
+  "scopus": {
+    "name": "Scopus (Elsevier)",
+    "default_field": "TITLE-ABS-KEY",
+    "valid_fields": ["TITLE-ABS-KEY", "TITLE", "AUTH", "KEY", "AFFIL", "EXACTSRCTITLE"],
+    "allowed_operators": ["AND", "OR", "AND NOT"],
+    "max_wildcards": null,
+    "wildcard_rules": {
+      "no_hyphen_expansion": true,
+      "description": "Wildcards after a hyphen (e.g. 'pre-train*') do NOT expand in Scopus. Explicit forms must be used."
+    },
+    "default_filters": {
+      "doc_types": {
+        "article": "LIMIT-TO ( DOCTYPE,\"ar\" )",
+        "conference": "LIMIT-TO ( DOCTYPE,\"cp\" )",
+        "review": "LIMIT-TO ( DOCTYPE,\"re\" )"
+      },
+      "year_format": "PUBYEAR > {start} AND PUBYEAR < {end}"
+    }
+  },
+  "ieee": {
+    "name": "IEEE Xplore",
+    "default_field": "All Metadata",
+    "valid_fields": ["All Metadata", "Document Title", "Abstract", "Authors", "Publication Title", "Index Terms"],
+    "allowed_operators": ["AND", "OR", "NOT"],
+    "max_wildcards": 10,
+    "wildcard_rules": {
+      "max_limit": 10,
+      "description": "IEEE Xplore Command Search strictly rejects queries with more than 10 wildcards (*). Extra wildcards must be expanded into explicit plural/inflection variants."
+    },
+    "default_filters": {
+      "doc_types": {
+        "article": "Journals",
+        "conference": "Conferences"
+      },
+      "year_format": "{start}_{end}_Year"
+    }
+  },
+  "wos": {
+    "name": "Web of Science (WoS)",
+    "default_field": "TS",
+    "valid_fields": ["TS", "TI", "AB", "AK", "KP", "AU", "SO", "DO"],
+    "allowed_operators": ["AND", "OR", "NOT", "NEAR", "SAME"],
+    "max_wildcards": null,
+    "wildcard_rules": {
+      "supports_asterisk": true,
+      "supports_question": true,
+      "supports_dollar": true,
+      "description": "WoS supports * (zero or more), ? (exactly one), $ (zero or one)."
+    },
+    "default_filters": {
+      "doc_types": {
+        "article": "Article",
+        "conference": "Proceedings Paper"
+      },
+      "year_format": "PY=({start}-{end})"
+    }
+  },
+  "springer": {
+    "name": "SpringerLink",
+    "default_field": "query",
+    "valid_fields": ["query", "title", "author"],
+    "allowed_operators": ["AND", "OR", "NOT"],
+    "max_wildcards": 0,
+    "wildcard_rules": {
+      "basic_search_no_wildcards": true,
+      "description": "Springer basic search does not reliably expand wildcards and uses lax boolean conjunction. Explicit search terms are required."
+    },
+    "default_filters": {
+      "doc_types": {
+        "article": "Article",
+        "conference": "ConferencePaper"
+      },
+      "year_format": "date-facet-mode=between&facet-start-year={start}&facet-end-year={end}"
+    }
+  }
+}

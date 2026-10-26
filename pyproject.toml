@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcpconecct"
+version = "1.0.0"
+description = "Automated Model Context Protocol (MCP) server for academic literature search, query validation, and export (Scopus, IEEE, WoS, SpringerLink) with Burp Suite and session support."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=2.0.0",
+    "httpx>=0.28.0",
+    "pydantic>=2.0.0",
+    "bibtexparser>=2.0.0",
+    "beautifulsoup4>=4.12.0",
+    "python-dotenv>=1.0.0",
+    "rich>=13.0.0",
+]
+
+[project.scripts]
+mcpconecct = "run_mcp:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

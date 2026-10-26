@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="space-y-6">
+  <!-- Header -->
+  <div>
+    <h1 class="text-2xl font-bold tracking-tight text-white">Conexiones & Autenticación Institucional</h1>
+    <p class="text-sm text-slate-400 mt-1">Configura y verifica el acceso a Scopus, IEEE Xplore, WoS y SpringerLink mediante sesiones de Burp Suite, cookies institucionales o API Keys.</p>
+  </div>
+
+  <!-- Burp Suite Guide Banner -->
+  <div class="p-4 rounded-xl bg-slate-900 border border-burp-500/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+    <div class="flex items-start gap-3">
+      <div class="w-10 h-10 rounded-lg bg-burp-500/20 text-burp-500 flex items-center justify-center flex-shrink-0 text-lg">
+        <i class="fa-solid fa-satellite-dish"></i>
+      </div>
+      <div>
+        <h3 class="text-sm font-semibold text-white flex items-center gap-2">
+          Integración en Vivo con Burp Suite (127.0.0.1:8080)
+          {% if burp_enabled %}
+          <span class="px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Enrutamiento Activo</span>
+          {% else %}
+          <span class="px-2 py-0.5 rounded-full text-[10px] bg-slate-800 text-slate-400 border border-slate-700">Enrutamiento Inactivo</span>
+          {% endif %}
+        </h3>
+        <p class="text-xs text-slate-400 mt-0.5">
+          Para capturar la sesión de tu universidad: Abre el navegador de Burp Suite, inicia sesión en la base académica, haz clic derecho en la petición $\rightarrow$ <strong>Copy as cURL</strong> y pégala en el importador de cada tarjeta.
+        </p>
+      </div>
+    </div>
+    <button onclick="toggleBurpProxy()" class="px-3 py-2 rounded-lg text-xs font-semibold {% if burp_enabled %}bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700{% else %}bg-burp-500 hover:bg-burp-600 text-white shadow-lg shadow-burp-500/20{% endif %} transition whitespace-nowrap">
+      {% if burp_enabled %}Desactivar Proxy Burp{% else %}Activar Proxy Burp{% endif %}
+    </button>
+  </div>
+
+  <!-- 4 Database Cards -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    {% for db_key, db_title, db_color, db_icon, db_desc in [
+      ('scopus', 'Scopus (Elsevier)', 'emerald', 'fa-solid fa-atom', 'Acceso a abstracts, citas y exportación BibTeX/CSV.'),
+      ('ieee', 'IEEE Xplore', 'blue', 'fa-solid fa-microchip', 'Command Search All Metadata y exportaciones de conferencias y revistas.'),
+      ('wos', 'Web of Science (Clarivate)', 'purple', 'fa-solid fa-book-journal-whills', 'Búsqueda temática TS= con filtros de año y tipo documental.'),
+      ('springer', 'SpringerLink (Nature)', 'amber', 'fa-solid fa-dna', 'Descarga masiva directa de metadatos vía endpoint CSV.')
+    ] %}
+    {% set sess = sessions.get(db_key, {}) %}
+    <div class="p-5 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition space-y-4 shadow-sm" id="card-{{ db_key }}">
+      <div class="flex items-start justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-lg bg-{{ db_color }}-500/10 text-{{ db_color }}-400 border border-{{ db_color }}-500/20 flex items-center justify-center text-lg">
+            <i class="{{ db_icon }}"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-white">{{ db_title }}</h3>
+            <p class="text-xs text-slate-400">{{ db_desc }}</p>
+          </div>
+        </div>
+        <span class="px-2 py-0.5 rounded text-[10px] font-semibold {% if sess.status == 'configured' %}bg-emerald-500/20 text-emerald-300 border border-emerald-500/30{% else %}bg-slate-800 text-slate-400 border border-slate-700{% endif %}" id="status-badge-{{ db_key }}">
+          {{ sess.status or 'Sin configurar' }}
+        </span>
+      </div>
+
+      <!-- Session Parameters Overview -->
+      <div class="bg-slate-950/60 p-3 rounded-lg border border-slate-800/80 text-xs space-y-1.5 font-mono">
+        <div class="flex justify-between text-slate-400 text-[11px]">
+          <span>Cookies almacenadas:</span>
+          <span class="text-white font-semibold" id="cookie-count-{{ db_key }}">{{ sess.cookies|length if sess.cookies else 0 }}</span>
+        </div>
+        <div class="flex justify-between text-slate-400 text-[11px]">
+          <span>API Key / Token:</span>
+          <span class="text-white" id="api-key-status-{{ db_key }}">{% if sess.api_key %}Configurada{% else %}No configurada{% endif %}</span>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex items-center justify-between pt-1 gap-2">
+        <button onclick="testConnection('{{ db_key }}')" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center gap-1.5">
+          <i class="fa-solid fa-bolt text-brand-400"></i>
+          <span>Probar Conexión</span>
+        </button>
+
+        <button onclick="openImportCurlModal('{{ db_key }}', '{{ db_title }}')" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-600 hover:bg-brand-500 text-white shadow-md shadow-brand-500/20 transition flex items-center gap-1.5">
+          <i class="fa-solid fa-file-import"></i>
+          <span>Importar cURL de Burp</span>
+        </button>
+      </div>
+
+      <!-- Test Output Box (hidden by default) -->
+      <div id="test-output-{{ db_key }}" class="hidden p-3 rounded-lg text-xs font-mono border"></div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Modal: Import cURL -->
+<div id="import-curl-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+  <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded-lg bg-burp-500/20 text-burp-500 flex items-center justify-center">
+          <i class="fa-solid fa-code"></i>
+        </div>
+        <h3 class="text-sm font-bold text-white" id="modal-db-title">Importar Sesión cURL</h3>
+      </div>
+      <button onclick="closeImportCurlModal()" class="text-slate-400 hover:text-white transition">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+    </div>
+
+    <p class="text-xs text-slate-400">
+      Copia la petición desde Burp Suite (clic derecho $\rightarrow$ <em>Copy as cURL</em>) o desde las DevTools del navegador y pégala aquí. El servidor extraerá automáticamente las cookies y cabeceras de autorización.
+    </p>
+
+    <input type="hidden" id="modal-db-key" value="">
+    <textarea id="modal-curl-input" rows="8" placeholder="curl 'https://...' -H 'Cookie: ...' -H 'User-Agent: ...'" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 resize-none"></textarea>
+
+    <div class="flex items-center justify-end gap-2 pt-2">
+      <button onclick="closeImportCurlModal()" class="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition">
+        Cancelar
+      </button>
+      <button onclick="submitImportCurl()" class="px-4 py-2 rounded-xl text-xs font-semibold bg-brand-600 hover:bg-brand-500 text-white shadow-md shadow-brand-500/20 transition flex items-center gap-1.5">
+        <i class="fa-solid fa-check"></i>
+        <span>Procesar e Importar</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function openImportCurlModal(dbKey, dbTitle) {
+    document.getElementById('modal-db-key').value = dbKey;
+    document.getElementById('modal-db-title').innerText = `Importar Sesión cURL · ${dbTitle}`;
+    document.getElementById('modal-curl-input').value = '';
+    document.getElementById('import-curl-modal').classList.remove('hidden');
+  }
+
+  function closeImportCurlModal() {
+    document.getElementById('import-curl-modal').classList.add('hidden');
+  }
+
+  async function submitImportCurl() {
+    const dbKey = document.getElementById('modal-db-key').value;
+    const curlCmd = document.getElementById('modal-curl-input').value.trim();
+    if (!curlCmd) {
+      showToast('Por favor pega un comando cURL válido', 'error');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/connections/import-curl', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ database: dbKey, curl_command: curlCmd })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(`Sesión importada: ${data.cookies_imported.length} cookies detectadas`, 'success');
+        closeImportCurlModal();
+        setTimeout(() => location.reload(), 800);
+      } else {
+        showToast(data.detail || 'Error al procesar cURL', 'error');
+      }
+    } catch (err) {
+      showToast('Fallo en la comunicación con el servidor', 'error');
+    }
+  }
+
+  async function testConnection(dbKey) {
+    const outputBox = document.getElementById(`test-output-${dbKey}`);
+    outputBox.classList.remove('hidden');
+    outputBox.className = 'p-3 rounded-lg text-xs font-mono border bg-slate-950 border-slate-800 text-slate-400';
+    outputBox.innerHTML = '<span class="animate-pulse">Enviando sonda a través de Burp Suite...</span>';
+
+    try {
+      const res = await fetch('/api/connections/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ database: dbKey })
+      });
+      const data = await res.json();
+
+      if (data.connected) {
+        outputBox.className = 'p-3 rounded-lg text-xs font-mono border bg-emerald-950/30 border-emerald-500/40 text-emerald-300';
+        outputBox.innerHTML = `<strong>Éxito (HTTP ${data.status_code || 200}):</strong> ${data.message}`;
+      } else {
+        outputBox.className = 'p-3 rounded-lg text-xs font-mono border bg-rose-950/30 border-rose-500/40 text-rose-300';
+        outputBox.innerHTML = `<strong>Aviso:</strong> ${data.message}`;
+      }
+    } catch (err) {
+      outputBox.className = 'p-3 rounded-lg text-xs font-mono border bg-rose-950/30 border-rose-500/40 text-rose-300';
+      outputBox.innerHTML = `<strong>Error de conexión:</strong> ${err.message}`;
+    }
+  }
+</script>
+{% endblock %}

@@ -1,0 +1,367 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="space-y-6">
+  <!-- Header -->
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight text-white">Estudio de Calibración PICO & RSL</h1>
+      <p class="text-sm text-slate-400 mt-1">Diseña, valida y calibra iterativamente ecuaciones de búsqueda para revisiones sistemáticas y artículos empíricos.</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <button onclick="loadSampleRslQuery()" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center gap-1.5">
+        <i class="fa-solid fa-flask text-brand-400"></i>
+        <span>Cargar Ejemplo de tu RSL</span>
+      </button>
+      <button onclick="openSaveIterationModal()" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-600 hover:bg-brand-500 text-white shadow-md shadow-brand-500/20 transition flex items-center gap-1.5">
+        <i class="fa-solid fa-floppy-disk"></i>
+        <span>Guardar Versión de Iteración</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- PICO Component Builder Matrix -->
+  <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+    <!-- P: Population -->
+    <div class="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+      <div class="flex items-center justify-between text-xs font-semibold text-blue-400">
+        <span>[P] Población / Problema</span>
+        <i class="fa-solid fa-users text-blue-500/40"></i>
+      </div>
+      <textarea id="pico-p" rows="3" placeholder='"unlearnable*", "availability poison*", "image cloaking"' class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500 font-mono resize-none"></textarea>
+      <p class="text-[10px] text-slate-500">Separar sinónimos por comas (se unirán con OR).</p>
+    </div>
+
+    <!-- I: Intervention -->
+    <div class="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+      <div class="flex items-center justify-between text-xs font-semibold text-emerald-400">
+        <span>[I] Intervención / Técnica</span>
+        <i class="fa-solid fa-shield-virus text-emerald-500/40"></i>
+      </div>
+      <textarea id="pico-i" rows="3" placeholder='"countermeasure*", "defens*", "purif*", "adversarial training"' class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500 font-mono resize-none"></textarea>
+      <p class="text-[10px] text-slate-500">Defensas o ataques evaluados.</p>
+    </div>
+
+    <!-- C: Comparison -->
+    <div class="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+      <div class="flex items-center justify-between text-xs font-semibold text-amber-400">
+        <span>[C] Comparación / Baseline</span>
+        <i class="fa-solid fa-scale-balanced text-amber-500/40"></i>
+      </div>
+      <textarea id="pico-c" rows="3" placeholder='"baseline*", "clean", "benchmark*", "original data"' class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500 font-mono resize-none"></textarea>
+      <p class="text-[10px] text-slate-500">Líneas base o modelos limpios.</p>
+    </div>
+
+    <!-- O: Outcome -->
+    <div class="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+      <div class="flex items-center justify-between text-xs font-semibold text-purple-400">
+        <span>[O] Resultado / Métrica</span>
+        <i class="fa-solid fa-chart-pie text-purple-500/40"></i>
+      </div>
+      <textarea id="pico-o" rows="3" placeholder='"accurac*", "performance*", "imperceptib*", "generaliz*"' class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500 font-mono resize-none"></textarea>
+      <p class="text-[10px] text-slate-500">Métricas o propiedades de éxito.</p>
+    </div>
+  </div>
+
+  <!-- Generate & Build Button -->
+  <div class="flex items-center justify-between">
+    <button onclick="buildAndTranslateQuery()" class="px-5 py-2.5 rounded-xl text-xs font-bold bg-brand-600 hover:bg-brand-500 text-white shadow-lg shadow-brand-500/20 transition flex items-center gap-2">
+      <i class="fa-solid fa-arrows-rotate"></i>
+      <span>Generar Ecuación & Traducir a Plataformas</span>
+    </button>
+
+    <button onclick="runCalibrationProbe()" class="px-4 py-2.5 rounded-xl text-xs font-bold bg-indigo-900/60 hover:bg-indigo-900 text-indigo-300 border border-indigo-500/30 transition flex items-center gap-2">
+      <i class="fa-solid fa-gauge-high"></i>
+      <span>Sondear Recuentos Cruzados (Calibration Probe)</span>
+    </button>
+  </div>
+
+  <!-- Synchronized Multi-Platform Translation Tabs -->
+  <div class="p-5 rounded-xl bg-slate-900 border border-slate-800 space-y-4">
+    <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+      <div class="flex gap-2">
+        <button onclick="switchTab('scopus')" class="tab-btn px-3 py-1.5 text-xs font-semibold rounded-lg bg-brand-600 text-white" id="tab-btn-scopus">Scopus</button>
+        <button onclick="switchTab('ieee')" class="tab-btn px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-400 hover:bg-slate-800" id="tab-btn-ieee">IEEE Xplore</button>
+        <button onclick="switchTab('wos')" class="tab-btn px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-400 hover:bg-slate-800" id="tab-btn-wos">Web of Science</button>
+        <button onclick="switchTab('springer')" class="tab-btn px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-400 hover:bg-slate-800" id="tab-btn-springer">SpringerLink</button>
+      </div>
+      <button onclick="copyActiveQuery()" class="text-xs text-brand-400 hover:text-brand-300 flex items-center gap-1 font-medium">
+        <i class="fa-regular fa-copy"></i>
+        <span>Copiar consulta</span>
+      </button>
+    </div>
+
+    <!-- Active Query Editor -->
+    <div>
+      <textarea id="active-query-text" rows="5" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-brand-500 resize-none"></textarea>
+    </div>
+
+    <!-- Live Validation & Wildcard Linter Output -->
+    <div id="validation-box" class="p-3 rounded-lg text-xs font-mono border bg-slate-950 border-slate-800 text-slate-400">
+      <span>El validador se ejecutará al generar la ecuación.</span>
+    </div>
+  </div>
+
+  <!-- Calibration Probe Results Table -->
+  <div id="probe-results-card" class="p-5 rounded-xl bg-slate-900 border border-slate-800 space-y-4 hidden">
+    <div class="flex items-center justify-between">
+      <div>
+        <h3 class="text-sm font-bold text-white">Resultados del Sondeo de Calibración</h3>
+        <p class="text-xs text-slate-400">Comparación de recuentos Sin Filtros (Identificación PRISMA) vs Con Filtros (Años 2020-2026, Article/Conference).</p>
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-xs text-slate-300">
+        <thead class="bg-slate-800/60 uppercase font-semibold text-slate-400 text-[10px] border-b border-slate-800">
+          <tr>
+            <th class="py-2 px-3">Base de Datos</th>
+            <th class="py-2 px-3">Sin Filtros (Identificación)</th>
+            <th class="py-2 px-3">Con Filtros (Cribado)</th>
+            <th class="py-2 px-3">Ruido Eliminado</th>
+            <th class="py-2 px-3">Estado</th>
+          </tr>
+        </thead>
+        <tbody id="probe-table-body" class="divide-y divide-slate-800 font-mono"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Saved Iterations History -->
+  <div class="p-5 rounded-xl bg-slate-900 border border-slate-800 space-y-4">
+    <div class="flex items-center justify-between">
+      <div>
+        <h3 class="text-sm font-bold text-white">Historial de Iteraciones Guardadas</h3>
+        <p class="text-xs text-slate-400">Registra por qué se agregaron o retiraron palabras clave a lo largo de tu investigación.</p>
+      </div>
+    </div>
+
+    {% if iterations %}
+    <div class="space-y-3">
+      {% for iter in iterations %}
+      <div class="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-brand-500/20 text-brand-300 border border-brand-500/30">{{ iter.version }}</span>
+            <span class="text-sm font-semibold text-white">{{ iter.title }}</span>
+          </div>
+          <span class="text-[11px] text-slate-500 font-mono">{{ iter.timestamp[:19].replace('T', ' ') }}</span>
+        </div>
+        {% if iter.notes %}
+        <p class="text-xs text-slate-400 italic">"{{ iter.notes }}"</p>
+        {% endif %}
+        <div class="p-2.5 rounded bg-slate-900 border border-slate-800/80 text-[11px] font-mono text-slate-300 truncate" title="{{ iter.canonical_query }}">
+          {{ iter.canonical_query }}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-xs text-slate-500 text-center py-4">No hay iteraciones guardadas todavía. Diseña tu primera versión arriba y guárdala.</p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Modal: Save Iteration -->
+<div id="save-iteration-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+  <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+    <div class="flex items-center justify-between">
+      <h3 class="text-sm font-bold text-white">Guardar Versión de Iteración</h3>
+      <button onclick="closeSaveIterationModal()" class="text-slate-400 hover:text-white transition">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+    </div>
+
+    <div class="space-y-3">
+      <div>
+        <label class="text-[11px] font-semibold text-slate-400 uppercase">Versión (ej. v1.0, v1.1)</label>
+        <input type="text" id="iter-version" value="v1.0" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs font-mono text-white focus:outline-none focus:border-brand-500">
+      </div>
+      <div>
+        <label class="text-[11px] font-semibold text-slate-400 uppercase">Título Descriptivo</label>
+        <input type="text" id="iter-title" placeholder="Ajuste de bloque I: exclusión de robust*" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-brand-500">
+      </div>
+      <div>
+        <label class="text-[11px] font-semibold text-slate-400 uppercase">Notas y Razón Metodológica</label>
+        <textarea id="iter-notes" rows="3" placeholder="Se retiró el término 'detect*' porque recuperaba artículos ajenos al constructo..." class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500 resize-none"></textarea>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-end gap-2 pt-2">
+      <button onclick="closeSaveIterationModal()" class="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition">
+        Cancelar
+      </button>
+      <button onclick="submitSaveIteration()" class="px-4 py-2 rounded-xl text-xs font-semibold bg-brand-600 hover:bg-brand-500 text-white shadow-md shadow-brand-500/20 transition">
+        Guardar Iteración
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let platformQueries = { scopus: '', ieee: '', wos: '', springer: '' };
+  let currentActiveTab = 'scopus';
+
+  function loadSampleRslQuery() {
+    document.getElementById('pico-p').value = '"unlearnable*", "availability poison*", "perturbative availability", "error-minimizing noise", "indiscriminate poisoning", "image cloaking", "facial privacy protection", "unauthorized training"';
+    document.getElementById('pico-i').value = '"countermeasure*", "defens*", "defenc*", "defend*", "attack*", "break*", "bypass*", "adversarial training", "augment*", "purif*", "ensemble*", "fine-tuning"';
+    document.getElementById('pico-c').value = '"baseline*", "clean", "existing", "previous*", "benchmark*", "original data"';
+    document.getElementById('pico-o').value = '"accurac*", "performance*", "effective*", "success rate*", "imperceptib*", "generaliz*"';
+    buildAndTranslateQuery();
+  }
+
+  function getCanonicalQueryFromPico() {
+    const p = document.getElementById('pico-p').value.split(',').map(s => s.trim()).filter(Boolean);
+    const i = document.getElementById('pico-i').value.split(',').map(s => s.trim()).filter(Boolean);
+    const c = document.getElementById('pico-c').value.split(',').map(s => s.trim()).filter(Boolean);
+    const o = document.getElementById('pico-o').value.split(',').map(s => s.trim()).filter(Boolean);
+
+    const blocks = [];
+    if (p.length) blocks.push('(' + p.join(' OR ') + ')');
+    if (i.length) blocks.push('(' + i.join(' OR ') + ')');
+    if (c.length) blocks.push('(' + c.join(' OR ') + ')');
+    if (o.length) blocks.push('(' + o.join(' OR ') + ')');
+
+    return blocks.join(' AND ');
+  }
+
+  async function buildAndTranslateQuery() {
+    const canonical = getCanonicalQueryFromPico();
+    if (!canonical) {
+      showToast('Por favor introduce al menos un término en los bloques PICO', 'error');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/calibration/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: canonical })
+      });
+      platformQueries = await res.json();
+      switchTab(currentActiveTab);
+      validateCurrentTab();
+      showToast('Ecuación generada y traducida para las 4 plataformas', 'success');
+    } catch (err) {
+      showToast('Error en la traducción de la consulta', 'error');
+    }
+  }
+
+  function switchTab(tab) {
+    currentActiveTab = tab;
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.className = 'tab-btn px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-400 hover:bg-slate-800';
+    });
+    document.getElementById(`tab-btn-${tab}`).className = 'tab-btn px-3 py-1.5 text-xs font-semibold rounded-lg bg-brand-600 text-white';
+    document.getElementById('active-query-text').value = platformQueries[tab] || '';
+    validateCurrentTab();
+  }
+
+  async function validateCurrentTab() {
+    const query = document.getElementById('active-query-text').value;
+    if (!query) return;
+
+    try {
+      const res = await fetch('/api/calibration/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ database: currentActiveTab, query: query })
+      });
+      const data = await res.json();
+      const box = document.getElementById('validation-box');
+
+      if (data.is_valid && !data.errors.length) {
+        let warnText = data.warnings.length ? `<br><span class="text-amber-400">⚠️ Advertencias:</span> ${data.warnings.join(' | ')}` : '';
+        box.className = 'p-3 rounded-lg text-xs font-mono border bg-emerald-950/30 border-emerald-500/40 text-emerald-300';
+        box.innerHTML = `<strong>Sintaxis Válida (${currentActiveTab.toUpperCase()}):</strong> ${data.wildcard_count} comodines (*) detectados.${warnText}`;
+      } else {
+        box.className = 'p-3 rounded-lg text-xs font-mono border bg-rose-950/30 border-rose-500/40 text-rose-300';
+        box.innerHTML = `<strong>Errores de Sintaxis:</strong> ${data.errors.join(' | ')}<br><span class="text-slate-400">Sugerencias: ${data.suggestions.join(' | ')}</span>`;
+      }
+    } catch (err) {}
+  }
+
+  function copyActiveQuery() {
+    const text = document.getElementById('active-query-text').value;
+    navigator.clipboard.writeText(text);
+    showToast('Consulta copiada al portapapeles', 'info');
+  }
+
+  async function runCalibrationProbe() {
+    const canonical = getCanonicalQueryFromPico();
+    if (!canonical) {
+      showToast('Genera primero la ecuación PICO', 'error');
+      return;
+    }
+
+    const card = document.getElementById('probe-results-card');
+    const tbody = document.getElementById('probe-table-body');
+    card.classList.remove('hidden');
+    tbody.innerHTML = '<tr><td colspan="5" class="py-4 text-center text-slate-400 animate-pulse">Sondeando Scopus, IEEE, WoS y SpringerLink...</td></tr>';
+
+    try {
+      const res = await fetch('/api/calibration/probe-count', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: canonical })
+      });
+      const data = await res.json();
+      tbody.innerHTML = '';
+
+      for (const [db, info] of Object.entries(data)) {
+        const row = document.createElement('tr');
+        row.className = 'hover:bg-slate-800/40 transition';
+        row.innerHTML = `
+          <td class="py-2.5 px-3 uppercase font-semibold text-white">${db}</td>
+          <td class="py-2.5 px-3 font-semibold text-slate-200">${info.unfiltered_count}</td>
+          <td class="py-2.5 px-3 font-semibold text-emerald-400">${info.filtered_count}</td>
+          <td class="py-2.5 px-3 text-slate-400">-${info.noise_filtered} (${Math.round((info.noise_filtered / (info.unfiltered_count || 1)) * 100)}%)</td>
+          <td class="py-2.5 px-3 text-[11px] ${info.status === 'ok' ? 'text-emerald-400' : 'text-amber-400'}">${info.status}</td>
+        `;
+        tbody.appendChild(row);
+      }
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="5" class="py-4 text-center text-rose-400">Fallo en el sondeo: ${err.message}</td></tr>`;
+    }
+  }
+
+  function openSaveIterationModal() {
+    document.getElementById('save-iteration-modal').classList.remove('hidden');
+  }
+
+  function closeSaveIterationModal() {
+    document.getElementById('save-iteration-modal').classList.add('hidden');
+  }
+
+  async function submitSaveIteration() {
+    const version = document.getElementById('iter-version').value;
+    const title = document.getElementById('iter-title').value;
+    const notes = document.getElementById('iter-notes').value;
+    const canonical = getCanonicalQueryFromPico();
+
+    if (!title || !canonical) {
+      showToast('Por favor completa el título y la ecuación', 'error');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/calibration/iterations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          version: version,
+          title: title,
+          notes: notes,
+          canonical_query: canonical
+        })
+      });
+      if (res.ok) {
+        showToast('Iteración guardada exitosamente', 'success');
+        closeSaveIterationModal();
+        setTimeout(() => location.reload(), 600);
+      }
+    } catch (err) {
+      showToast('Error al guardar iteración', 'error');
+    }
+  }
+</script>
+{% endblock %}

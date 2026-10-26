@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="space-y-6">
+  <!-- Header -->
+  <div>
+    <h1 class="text-2xl font-bold tracking-tight text-white">Banco de Búsqueda Normal & Avanzada</h1>
+    <p class="text-sm text-slate-400 mt-1">Ejecuta búsquedas exploratorias directas o ecuaciones complejas, visualiza los resultados y descárgalos en BibTeX o CSV.</p>
+  </div>
+
+  <!-- Search Workbench Form Card -->
+  <div class="p-5 rounded-xl bg-slate-900 border border-slate-800 space-y-4 shadow-sm">
+    <!-- Mode & Database Bar -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+      <!-- Search Mode Toggle -->
+      <div class="flex items-center gap-2">
+        <span class="text-xs text-slate-400 font-semibold uppercase">Modo:</span>
+        <div class="flex bg-slate-950 p-1 rounded-lg border border-slate-800">
+          <button onclick="setSearchMode('advanced')" id="mode-btn-advanced" class="px-3 py-1 text-xs font-semibold rounded-md bg-brand-600 text-white transition">Avanzada (Booleana)</button>
+          <button onclick="setSearchMode('normal')" id="mode-btn-normal" class="px-3 py-1 text-xs font-semibold rounded-md text-slate-400 hover:text-white transition">Normal (Keywords)</button>
+        </div>
+      </div>
+
+      <!-- Database Selector -->
+      <div class="flex items-center gap-2">
+        <span class="text-xs text-slate-400 font-semibold uppercase">Base de Datos:</span>
+        <select id="search-db" class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-brand-500 font-medium">
+          <option value="scopus">Scopus (Elsevier)</option>
+          <option value="ieee">IEEE Xplore</option>
+          <option value="wos">Web of Science</option>
+          <option value="springer">SpringerLink</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Query Input Area -->
+    <div>
+      <div class="flex items-center justify-between mb-1.5">
+        <label class="text-xs font-semibold text-slate-300" id="query-label">Ecuación de Búsqueda Avanzada</label>
+        <span class="text-[11px] text-slate-500" id="query-hint">Usa sintaxis con operadores AND, OR, NOT</span>
+      </div>
+      <textarea id="search-query" rows="4" placeholder='TITLE-ABS-KEY ( "unlearnable*" AND "defens*" )' class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-brand-500 resize-none"></textarea>
+    </div>
+
+    <!-- Filters Accordion -->
+    <div class="p-3.5 rounded-lg bg-slate-950/60 border border-slate-800/80 space-y-3">
+      <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+        <i class="fa-solid fa-sliders text-brand-400"></i>
+        <span>Filtros de Búsqueda (Opcionales)</span>
+      </span>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <!-- Years -->
+        <div>
+          <label class="text-[10px] font-semibold text-slate-400 uppercase">Rango de Años (ej. 2020 a 2026)</label>
+          <div class="flex items-center gap-2 mt-1">
+            <input type="number" id="filter-year-start" placeholder="2020" value="2020" class="w-full bg-slate-900 border border-slate-800 rounded-lg p-1.5 text-xs text-white focus:outline-none focus:border-brand-500 font-mono">
+            <span class="text-slate-500 text-xs">-</span>
+            <input type="number" id="filter-year-end" placeholder="2026" value="2026" class="w-full bg-slate-900 border border-slate-800 rounded-lg p-1.5 text-xs text-white focus:outline-none focus:border-brand-500 font-mono">
+          </div>
+        </div>
+
+        <!-- Document Types -->
+        <div class="sm:col-span-2">
+          <label class="text-[10px] font-semibold text-slate-400 uppercase">Tipos de Documento</label>
+          <div class="flex flex-wrap gap-3 mt-1.5 text-xs text-slate-300">
+            <label class="flex items-center gap-1.5 cursor-pointer">
+              <input type="checkbox" id="dt-article" checked class="rounded bg-slate-900 border-slate-700 text-brand-500 focus:ring-0">
+              <span>Artículos de Revista (Article / Journal)</span>
+            </label>
+            <label class="flex items-center gap-1.5 cursor-pointer">
+              <input type="checkbox" id="dt-conference" checked class="rounded bg-slate-900 border-slate-700 text-brand-500 focus:ring-0">
+              <span>Actas de Conferencia (Conference Paper)</span>
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions Bar -->
+    <div class="flex items-center justify-between pt-2">
+      <button onclick="runSearch()" id="btn-search" class="px-5 py-2.5 rounded-xl text-xs font-bold bg-brand-600 hover:bg-brand-500 text-white shadow-lg shadow-brand-500/20 transition flex items-center gap-2">
+        <i class="fa-solid fa-magnifying-glass"></i>
+        <span>Ejecutar Búsqueda</span>
+      </button>
+
+      <div class="flex items-center gap-2" id="export-buttons-group">
+        <button onclick="triggerExport('bibtex')" class="px-3 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-brand-300 border border-slate-700 transition flex items-center gap-1.5">
+          <i class="fa-solid fa-download"></i>
+          <span>Exportar a BibTeX (.bib)</span>
+        </button>
+        <button onclick="triggerExport('csv')" class="px-3 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 transition flex items-center gap-1.5">
+          <i class="fa-solid fa-file-csv"></i>
+          <span>Exportar a CSV (.csv)</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results Container -->
+  <div id="results-card" class="p-5 rounded-xl bg-slate-900 border border-slate-800 space-y-4 hidden shadow-sm">
+    <div class="flex items-center justify-between">
+      <div>
+        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+          <span>Resultados Obtenidos</span>
+          <span id="results-count-badge" class="px-2 py-0.5 rounded-full text-[10px] bg-brand-500/20 text-brand-300 font-mono">0 resultados</span>
+        </h3>
+        <p class="text-xs text-slate-400" id="results-subtext">Mostrando registros recuperados.</p>
+      </div>
+    </div>
+
+    <!-- Results Table -->
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-xs text-slate-300">
+        <thead class="bg-slate-800/60 uppercase font-semibold text-slate-400 text-[10px] border-b border-slate-800">
+          <tr>
+            <th class="py-2.5 px-3">Título del Estudio</th>
+            <th class="py-2.5 px-3">Autores</th>
+            <th class="py-2.5 px-3">Año</th>
+            <th class="py-2.5 px-3">Revista / Conferencia</th>
+            <th class="py-2.5 px-3">DOI</th>
+          </tr>
+        </thead>
+        <tbody id="results-table-body" class="divide-y divide-slate-800 font-sans"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  let currentSearchMode = 'advanced';
+
+  function setSearchMode(mode) {
+    currentSearchMode = mode;
+    const btnAdv = document.getElementById('mode-btn-advanced');
+    const btnNorm = document.getElementById('mode-btn-normal');
+    const label = document.getElementById('query-label');
+    const hint = document.getElementById('query-hint');
+    const textarea = document.getElementById('search-query');
+
+    if (mode === 'normal') {
+      btnNorm.className = 'px-3 py-1 text-xs font-semibold rounded-md bg-brand-600 text-white transition';
+      btnAdv.className = 'px-3 py-1 text-xs font-semibold rounded-md text-slate-400 hover:text-white transition';
+      label.innerText = 'Búsqueda Normal por Palabras Clave';
+      hint.innerText = 'Introduce términos separados por espacios (ej. unlearnable examples deep learning)';
+      textarea.placeholder = 'unlearnable examples deep learning defense';
+    } else {
+      btnAdv.className = 'px-3 py-1 text-xs font-semibold rounded-md bg-brand-600 text-white transition';
+      btnNorm.className = 'px-3 py-1 text-xs font-semibold rounded-md text-slate-400 hover:text-white transition';
+      label.innerText = 'Ecuación de Búsqueda Avanzada';
+      hint.innerText = 'Usa sintaxis con operadores AND, OR, NOT y campos nativos';
+      textarea.placeholder = 'TITLE-ABS-KEY ( "unlearnable*" AND "defens*" )';
+    }
+  }
+
+  function getSelectedDocTypes() {
+    const list = [];
+    if (document.getElementById('dt-article').checked) list.push('Article');
+    if (document.getElementById('dt-conference').checked) list.push('Conference Paper');
+    return list;
+  }
+
+  async function runSearch() {
+    const db = document.getElementById('search-db').value;
+    const query = document.getElementById('search-query').value.trim();
+    if (!query) {
+      showToast('Por favor introduce una consulta', 'error');
+      return;
+    }
+
+    const btn = document.getElementById('btn-search');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i><span>Buscando...</span>';
+
+    const payload = {
+      database: db,
+      query: query,
+      search_mode: currentSearchMode,
+      year_start: parseInt(document.getElementById('filter-year-start').value) || null,
+      year_end: parseInt(document.getElementById('filter-year-end').value) || null,
+      doc_types: getSelectedDocTypes(),
+      page: 1,
+      page_size: 25,
+      agent_name: 'Web UI'
+    };
+
+    try {
+      const res = await fetch('/api/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i><span>Ejecutar Búsqueda</span>';
+
+      if (!res.ok) {
+        showToast(data.detail || 'Fallo en la búsqueda', 'error');
+        return;
+      }
+
+      displayResults(data);
+      showToast(`Recuperados ${data.papers.length} estudios de ${data.total_results} encontrados`, 'success');
+    } catch (err) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i><span>Ejecutar Búsqueda</span>';
+      showToast('Error de red o conexión fallida', 'error');
+    }
+  }
+
+  function displayResults(data) {
+    const card = document.getElementById('results-card');
+    const tbody = document.getElementById('results-table-body');
+    const badge = document.getElementById('results-count-badge');
+    card.classList.remove('hidden');
+
+    badge.innerText = `${data.total_results} encontrados (mostrando ${data.papers.length})`;
+    tbody.innerHTML = '';
+
+    if (!data.papers.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="py-6 text-center text-slate-500">No se encontraron artículos para esta consulta y filtros.</td></tr>';
+      return;
+    }
+
+    for (const p of data.papers) {
+      const row = document.createElement('tr');
+      row.className = 'hover:bg-slate-800/40 transition';
+      const authors = Array.isArray(p.authors) ? p.authors.slice(0, 3).join(', ') : (p.authors || '');
+      const doiLink = p.doi ? `<a href="https://doi.org/${p.doi}" target="_blank" class="text-brand-400 hover:underline font-mono text-[11px]">${p.doi}</a>` : '<span class="text-slate-600">-</span>';
+
+      row.innerHTML = `
+        <td class="py-2.5 px-3 font-semibold text-white max-w-md">${p.title}</td>
+        <td class="py-2.5 px-3 text-slate-400 text-[11px]">${authors}</td>
+        <td class="py-2.5 px-3 text-slate-300 font-mono">${p.year || ''}</td>
+        <td class="py-2.5 px-3 text-slate-400 text-[11px] max-w-xs truncate" title="${p.venue}">${p.venue || ''}</td>
+        <td class="py-2.5 px-3 whitespace-nowrap">${doiLink}</td>
+      `;
+      tbody.appendChild(row);
+    }
+  }
+
+  async function triggerExport(format) {
+    const db = document.getElementById('search-db').value;
+    const query = document.getElementById('search-query').value.trim();
+    if (!query) {
+      showToast('Introduce una consulta para poder exportar', 'error');
+      return;
+    }
+
+    showToast(`Generando archivo .${format}...`, 'info');
+
+    // Use search endpoint with export logging
+    const payload = {
+      database: db,
+      query: query,
+      format: format,
+      year_start: parseInt(document.getElementById('filter-year-start').value) || null,
+      year_end: parseInt(document.getElementById('filter-year-end').value) || null,
+      doc_types: getSelectedDocTypes(),
+    };
+
+    try {
+      const res = await fetch('/api/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, search_mode: currentSearchMode, page_size: 50, agent_name: 'Web UI (Export)' })
+      });
+      if (res.ok) {
+        showToast(`Exportación .${format} completada. Disponible en Historial.`, 'success');
+      }
+    } catch (err) {}
+  }
+</script>
+{% endblock %}

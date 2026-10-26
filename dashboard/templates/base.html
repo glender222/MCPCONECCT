@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-slate-950 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}MCPCONECCT · Academic Search & Agent Observability Hub{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50: '#eef2ff', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca', 900: '#312e81' },
+            burp: { 500: '#ff6633', 600: '#e65c00' },
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+  </style>
+</head>
+<body class="h-full flex flex-col font-sans antialiased bg-slate-950 text-slate-200">
+  <!-- Top Navigation Bar -->
+  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-400 flex items-center justify-center shadow-lg shadow-brand-500/20">
+          <i class="fa-solid fa-graduation-cap text-white text-lg"></i>
+        </div>
+        <div>
+          <span class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+            MCPCONECCT
+            <span class="text-xs px-2 py-0.5 rounded-full font-medium bg-brand-500/10 text-brand-400 border border-brand-500/20">Core Hub</span>
+          </span>
+          <p class="text-xs text-slate-400 hidden sm:block">Academic Search, PICO Calibration & Agent Telemetry</p>
+        </div>
+      </div>
+
+      <!-- Burp Suite Proxy Status Badge -->
+      <div class="flex items-center gap-3">
+        <div id="burp-status-box" class="flex items-center gap-2 px-3 py-1.5 rounded-lg border {% if burp_enabled %}bg-emerald-950/40 border-emerald-500/30 text-emerald-400{% else %}bg-slate-800/60 border-slate-700 text-slate-400{% endif %} text-xs font-medium">
+          <span class="relative flex h-2 w-2">
+            <span class="{% if burp_enabled %}animate-ping bg-emerald-400{% else %}bg-slate-500{% endif %} absolute inline-flex h-full w-full rounded-full opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 {% if burp_enabled %}bg-emerald-500{% else %}bg-slate-500{% endif %}"></span>
+          </span>
+          <span>Burp Suite Proxy: <strong id="burp-status-text">{% if burp_enabled %}127.0.0.1:8080 (Activo){% else %}Inactivo{% endif %}</strong></span>
+          <button onclick="toggleBurpProxy()" class="ml-2 px-2 py-0.5 text-[10px] rounded bg-slate-700 hover:bg-slate-600 text-white transition">
+            {% if burp_enabled %}Desactivar{% else %}Activar{% endif %}
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="flex-1 flex max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 gap-6">
+    <!-- Sidebar Navigation -->
+    <aside class="w-64 flex-shrink-0 hidden md:block">
+      <nav class="space-y-1">
+        <a href="/" class="flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition {% if active_page == 'dashboard' %}bg-brand-600 text-white shadow-md shadow-brand-500/20{% else %}text-slate-400 hover:bg-slate-900 hover:text-slate-200{% endif %}">
+          <i class="fa-solid fa-chart-line w-5 text-center"></i>
+          <span>Dashboard & Métricas</span>
+        </a>
+
+        <a href="/connections" class="flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition {% if active_page == 'connections' %}bg-brand-600 text-white shadow-md shadow-brand-500/20{% else %}text-slate-400 hover:bg-slate-900 hover:text-slate-200{% endif %}">
+          <i class="fa-solid fa-network-wired w-5 text-center"></i>
+          <span>Conexiones & Auth</span>
+        </a>
+
+        <a href="/calibration" class="flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition {% if active_page == 'calibration' %}bg-brand-600 text-white shadow-md shadow-brand-500/20{% else %}text-slate-400 hover:bg-slate-900 hover:text-slate-200{% endif %}">
+          <i class="fa-solid fa-filter-circle-dollar w-5 text-center"></i>
+          <span>Calibrador PICO / RSL</span>
+        </a>
+
+        <a href="/search" class="flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition {% if active_page == 'search' %}bg-brand-600 text-white shadow-md shadow-brand-500/20{% else %}text-slate-400 hover:bg-slate-900 hover:text-slate-200{% endif %}">
+          <i class="fa-solid fa-magnifying-glass w-5 text-center"></i>
+          <span>Búsqueda Normal / Avanzada</span>
+        </a>
+
+        <a href="/history" class="flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition {% if active_page == 'history' %}bg-brand-600 text-white shadow-md shadow-brand-500/20{% else %}text-slate-400 hover:bg-slate-900 hover:text-slate-200{% endif %}">
+          <i class="fa-solid fa-robot w-5 text-center"></i>
+          <span>Auditoría de Agentes</span>
+        </a>
+      </nav>
+
+      <!-- Client Info Card -->
+      <div class="mt-8 p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-xs space-y-2">
+        <div class="flex items-center justify-between text-slate-400 font-semibold uppercase tracking-wider text-[10px]">
+          <span>Clientes MCP</span>
+          <span class="text-emerald-400">Listo</span>
+        </div>
+        <p class="text-slate-400">Compatible con llamadas stdio / SSE desde:</p>
+        <div class="flex flex-wrap gap-1.5 pt-1">
+          <span class="px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20 font-mono">Codex</span>
+          <span class="px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 font-mono">Claude Code</span>
+          <span class="px-2 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20 font-mono">Antigravity</span>
+          <span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-mono">Cursor</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 min-w-0">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <!-- Notification Toast Container -->
+  <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2"></div>
+
+  <script>
+    // Toast Notification helper
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      const bg = type === 'success' ? 'bg-emerald-950 border-emerald-500/40 text-emerald-200' :
+                 type === 'error' ? 'bg-rose-950 border-rose-500/40 text-rose-200' :
+                 'bg-slate-900 border-slate-700 text-slate-200';
+      toast.className = `px-4 py-3 rounded-lg border shadow-xl text-xs flex items-center gap-3 transition transform duration-300 ${bg}`;
+      toast.innerHTML = `<span>${message}</span>`;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    // Toggle Burp Suite Proxy
+    async function toggleBurpProxy() {
+      try {
+        const current = document.getElementById('burp-status-text').innerText.includes('Activo');
+        const res = await fetch('/api/proxy/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: !current })
+        });
+        const data = await res.json();
+        showToast(`Burp Suite Proxy ${data.burp_proxy_enabled ? 'Activado' : 'Desactivado'}`, 'success');
+        setTimeout(() => location.reload(), 600);
+      } catch (err) {
+        showToast('Error al alternar proxy de Burp', 'error');
+      }
+    }
+  </script>
+</body>
+</html>
