@@ -3,7 +3,7 @@
 # 🎓 MCPCONECCT
 ### Academic Literature Search, PICO Calibration & RSL Export Hub
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg?style=flat-square)](https://github.com)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg?style=flat-square)](https://github.com/glender222/MCPCONECCT)
 [![Python](https://img.shields.io/badge/python-3.10+-3776AB.svg?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![Rust](https://img.shields.io/badge/rust-1.80+-DEA584.svg?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![Protocol](https://img.shields.io/badge/MCP-Standard%202.0-8A2BE2.svg?style=flat-square)](https://modelcontextprotocol.io)
@@ -140,8 +140,8 @@ graph TD
 
 ### 1. Clonar el Repositorio
 ```bash
-git clone https://github.com/tu-usuario/mcpconecct.git
-cd mcpconecct
+git clone https://github.com/glender222/MCPCONECCT.git
+cd MCPCONECCT
 ```
 
 ### 2. Configurar el Entorno Python
