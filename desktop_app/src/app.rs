@@ -375,6 +375,10 @@ impl McpDesktopApp {
         }
     }
 
+    pub fn get_active_project(&self) -> Option<&crate::research_client::ProjectItem> {
+        self.projects_list.get(self.selected_project_idx)
+    }
+
     pub fn get_active_project_id(&self) -> Option<String> {
         self.projects_list.get(self.selected_project_idx).map(|p| p.project_id.clone())
     }
@@ -445,10 +449,16 @@ impl McpDesktopApp {
     fn apply_theme(&self, ctx: &egui::Context) {
         match self.theme {
             AppTheme::DarkModern => {
-                ctx.set_visuals(egui::Visuals::dark());
+                let mut visuals = egui::Visuals::dark();
+                visuals.panel_fill = egui::Color32::from_rgb(18, 20, 26);
+                visuals.window_fill = egui::Color32::from_rgb(24, 26, 34);
+                ctx.set_visuals(visuals);
             }
             AppTheme::AcademicLight => {
-                ctx.set_visuals(egui::Visuals::light());
+                let mut visuals = egui::Visuals::light();
+                visuals.panel_fill = egui::Color32::from_rgb(248, 249, 252);
+                visuals.window_fill = egui::Color32::from_rgb(255, 255, 255);
+                ctx.set_visuals(visuals);
             }
         }
     }
@@ -931,19 +941,19 @@ impl McpDesktopApp {
         let status = self.health_badges.get(db_name).map(|s| s.as_str()).unwrap_or("UNKNOWN");
         match status {
             "VALID_INSTITUTIONAL" => {
-                ui.colored_label(egui::Color32::from_rgb(34, 197, 94), "🟢 INSTITUCIONAL ACTIVO");
+                ui.colored_label(egui::Color32::from_rgb(34, 197, 94), "● INSTITUCIONAL ACTIVO");
             }
             "VALID_PUBLIC" => {
-                ui.colored_label(egui::Color32::from_rgb(59, 130, 246), "🔵 ACCESO PÚBLICO / OPEN ACCESS");
+                ui.colored_label(egui::Color32::from_rgb(59, 130, 246), "● ACCESO PÚBLICO / OPEN ACCESS");
             }
             "WAF_CHALLENGE" => {
-                ui.colored_label(egui::Color32::from_rgb(239, 68, 68), "🔴 DESAFÍO WAF / BLOQUEO DETECTADO");
+                ui.colored_label(egui::Color32::from_rgb(239, 68, 68), "● DESAFÍO WAF / BLOQUEO DETECTADO");
             }
             "SESSION_EXPIRED" => {
-                ui.colored_label(egui::Color32::from_rgb(234, 179, 8), "🟡 SESIÓN EXPIRADA / LOGIN REQUERIDO");
+                ui.colored_label(egui::Color32::from_rgb(234, 179, 8), "● SESIÓN EXPIRADA / LOGIN REQUERIDO");
             }
             _ => {
-                ui.colored_label(egui::Color32::GRAY, "⚪ ESTADO NO VERIFICADO");
+                ui.colored_label(egui::Color32::GRAY, "● ESTADO NO VERIFICADO");
             }
         }
     }
@@ -957,67 +967,126 @@ impl eframe::App for McpDesktopApp {
         // Apply theme
         self.apply_theme(ui.ctx());
 
-        // Top Header Panel
-        egui::Panel::top("top_panel").show(ui, |ui| {
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                ui.heading("🎓 MCPCONECCT · Academic Core Desktop");
+        // Left Sidebar Panel (ChatGPT-style Navigation & Project Drawer)
+        egui::Panel::left("sidebar_panel")
+            .default_size(270.0)
+            .show_separator_line(true)
+            .show(ui, |ui| {
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("MCPCONECCT").size(16.0).strong().color(egui::Color32::WHITE));
+                    ui.colored_label(egui::Color32::from_rgb(59, 130, 246), "v2.0");
+                });
+                ui.label(egui::RichText::new("Academic Research Workspace").size(11.0).color(egui::Color32::from_rgb(148, 163, 184)));
+                ui.add_space(10.0);
 
-                ui.separator();
+                // Section 1: PROYECTOS (ChatGPT-style vertical list)
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("PROYECTOS").strong().size(11.0).color(egui::Color32::from_rgb(148, 163, 184)));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("+ Nuevo").clicked() {
+                            self.show_create_project_modal = true;
+                        }
+                    });
+                });
+                ui.add_space(4.0);
 
-                // Project Selector Combobox
+                let mut project_changed = false;
                 if self.projects_list.is_empty() {
-                    ui.colored_label(egui::Color32::from_rgb(234, 179, 8), "📁 Sin proyectos");
-                    if ui.button("➕ Crear Proyecto").clicked() {
-                        self.show_create_project_modal = true;
-                    }
+                    ui.colored_label(egui::Color32::from_rgb(234, 179, 8), "Sin proyectos aún. Pulsa '+ Nuevo'.");
                 } else {
-                    let current_name = self.projects_list.get(self.selected_project_idx)
-                        .map(|p| p.name.clone())
-                        .unwrap_or_else(|| "Seleccionar Proyecto".to_string());
-
-                    let mut project_changed = false;
-                    egui::ComboBox::from_id_salt("header_project_combobox")
-                        .selected_text(format!("📁 {}", current_name))
-                        .show_ui(ui, |ui| {
-                            for (i, p) in self.projects_list.iter().enumerate() {
-                                let label = if p.archived {
-                                    format!("📁 {} [Archivado]", p.name)
-                                } else {
-                                    format!("📁 {}", p.name)
-                                };
-                                if ui.selectable_value(&mut self.selected_project_idx, i, label).clicked() {
-                                    project_changed = true;
-                                }
+                    egui::ScrollArea::vertical().id_salt("sidebar_projects_scroll").max_height(140.0).show(ui, |ui| {
+                        let count = self.projects_list.len();
+                        for i in 0..count {
+                            let (name, archived) = {
+                                let p = &self.projects_list[i];
+                                (p.name.clone(), p.archived)
+                            };
+                            let is_selected = self.selected_project_idx == i;
+                            let text = if archived {
+                                format!("• {} [Archivado]", name)
+                            } else {
+                                format!("• {}", name)
+                            };
+                            let rich = if is_selected {
+                                egui::RichText::new(text).color(egui::Color32::WHITE).strong()
+                            } else {
+                                egui::RichText::new(text).color(egui::Color32::from_rgb(180, 185, 200))
+                            };
+                            if ui.selectable_label(is_selected, rich).clicked() {
+                                self.selected_project_idx = i;
+                                project_changed = true;
                             }
-                        });
-                    if project_changed {
-                        self.refresh_active_project_data();
-                    }
-
-                    if ui.button("➕ Nuevo").clicked() {
-                        self.show_create_project_modal = true;
-                    }
+                        }
+                    });
+                }
+                if project_changed {
+                    self.refresh_active_project_data();
                 }
 
+                ui.add_space(8.0);
                 ui.separator();
+                ui.add_space(6.0);
 
-                // Backend Connectivity Indicator
-                if self.backend_online {
-                    ui.colored_label(egui::Color32::from_rgb(34, 197, 94), "🟢 Backend Conectado");
-                } else {
-                    ui.colored_label(egui::Color32::from_rgb(239, 68, 68), "⚠️ Servicio local no disponible");
-                    if ui.button("🔄 Reintentar").clicked() {
-                        self.refresh_projects();
+                // Section 2: ESPACIO DE INVESTIGACIÓN (Vertical Navigation Menu)
+                ui.label(egui::RichText::new("INVESTIGACIÓN").strong().size(11.0).color(egui::Color32::from_rgb(148, 163, 184)));
+                ui.add_space(4.0);
+
+                let nav_items = [
+                    (ActiveTab::Project, "Alcance & Preguntas (RQs)"),
+                    (ActiveTab::Search, "Búsqueda Multi-Base"),
+                    (ActiveTab::Library, "Biblioteca del Proyecto"),
+                    (ActiveTab::NotesEvidence, "Notas y Evidencia"),
+                    (ActiveTab::Interchange, "Importar / Exportar"),
+                    (ActiveTab::History, "Historial & Auditoría"),
+                ];
+
+                for (tab, label) in nav_items {
+                    let is_active = self.active_tab == tab;
+                    let text = if is_active {
+                        egui::RichText::new(format!("  {}  ", label)).color(egui::Color32::WHITE).strong()
+                    } else {
+                        egui::RichText::new(format!("  {}  ", label)).color(egui::Color32::from_rgb(190, 195, 210))
+                    };
+                    if ui.selectable_label(is_active, text).clicked() {
+                        self.active_tab = tab;
                     }
                 }
 
-                // Right side controls: Theme switch, Burp status, Loading Spinner
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    // Theme Switcher
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(6.0);
+
+                // Section 3: HERRAMIENTAS Y CONEXIÓN
+                ui.label(egui::RichText::new("HERRAMIENTAS").strong().size(11.0).color(egui::Color32::from_rgb(148, 163, 184)));
+                ui.add_space(4.0);
+
+                let tool_items = [
+                    (ActiveTab::Connections, "Conexiones & Burp Suite"),
+                    (ActiveTab::Calibration, "Calibrador PICO & RSL"),
+                    (ActiveTab::ExportsViewer, "Visor de Exportaciones"),
+                ];
+
+                for (tab, label) in tool_items {
+                    let is_active = self.active_tab == tab;
+                    let text = if is_active {
+                        egui::RichText::new(format!("  {}  ", label)).color(egui::Color32::WHITE).strong()
+                    } else {
+                        egui::RichText::new(format!("  {}  ", label)).color(egui::Color32::from_rgb(190, 195, 210))
+                    };
+                    if ui.selectable_label(is_active, text).clicked() {
+                        self.active_tab = tab;
+                    }
+                }
+
+                // Sidebar Footer pinned to bottom
+                ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+                    ui.add_space(8.0);
+
+                    // Theme switch button
                     let theme_btn_text = match self.theme {
-                        AppTheme::DarkModern => "☀️ Modo Claro",
-                        AppTheme::AcademicLight => "🌙 Modo Oscuro",
+                        AppTheme::DarkModern => "Modo Claro",
+                        AppTheme::AcademicLight => "Modo Oscuro",
                     };
                     if ui.button(theme_btn_text).clicked() {
                         self.theme = match self.theme {
@@ -1028,34 +1097,46 @@ impl eframe::App for McpDesktopApp {
 
                     ui.separator();
 
-                    if ui.button("🔄 Actualizar Burp").clicked() {
-                        self.burp_running = is_burp_proxy_running();
-                    }
-                    if self.burp_running {
-                        ui.colored_label(egui::Color32::from_rgb(34, 197, 94), "🟢 Burp Suite: Activo (127.0.0.1:8080)");
-                    } else {
-                        ui.colored_label(egui::Color32::from_rgb(239, 68, 68), "🔴 Burp Suite: Inactivo");
-                    }
+                    // Burp status
+                    ui.horizontal(|ui| {
+                        if self.burp_running {
+                            ui.colored_label(egui::Color32::from_rgb(34, 197, 94), "● Burp Activo");
+                        } else {
+                            ui.colored_label(egui::Color32::from_rgb(239, 68, 68), "● Burp Inactivo");
+                        }
+                        if ui.small_button("↻").clicked() {
+                            self.burp_running = is_burp_proxy_running();
+                        }
+                    });
 
-                    // Async activity indicator
-                    if self.is_searching || self.is_exporting {
-                        ui.separator();
-                        ui.spinner();
-                        ui.colored_label(egui::Color32::from_rgb(59, 130, 246), &self.loading_label);
-                        ui.ctx().request_repaint();
+                    // Backend Connectivity Status
+                    ui.horizontal(|ui| {
+                        if self.backend_online {
+                            ui.colored_label(egui::Color32::from_rgb(34, 197, 94), "● Backend Conectado");
+                        } else {
+                            ui.colored_label(egui::Color32::from_rgb(239, 68, 68), "● Desconectado");
+                            if ui.small_button("↻").clicked() {
+                                self.refresh_projects();
+                            }
+                        }
+                    });
+
+                    if self.is_searching || self.is_exporting || self.is_ingesting {
+                        ui.horizontal(|ui| {
+                            ui.spinner();
+                            ui.colored_label(egui::Color32::from_rgb(59, 130, 246), &self.loading_label);
+                        });
                     }
                 });
             });
-            ui.add_space(6.0);
-        });
 
         // Bottom Status Bar
         egui::Panel::bottom("bottom_panel").show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label("Estado:");
-                let status_color = if self.status_message.starts_with('✅') {
+                ui.label(egui::RichText::new("Estado:").strong());
+                let status_color = if self.status_message.starts_with('✓') || self.status_message.starts_with('✅') {
                     egui::Color32::from_rgb(34, 197, 94)
-                } else if self.status_message.starts_with('❌') {
+                } else if self.status_message.starts_with('✗') || self.status_message.starts_with('❌') {
                     egui::Color32::from_rgb(239, 68, 68)
                 } else {
                     egui::Color32::LIGHT_BLUE
@@ -1064,38 +1145,57 @@ impl eframe::App for McpDesktopApp {
             });
         });
 
-        // Main Central Panel
+        // Main Central Panel (Clean Modern Content Area)
         egui::CentralPanel::default().show(ui, |ui| {
-            // Tab Selector Navigation
-            ui.horizontal_wrapped(|ui| {
-                ui.selectable_value(&mut self.active_tab, ActiveTab::Project, "📁 Proyecto");
-                ui.selectable_value(&mut self.active_tab, ActiveTab::Search, "🔍 Búsqueda");
-                ui.selectable_value(&mut self.active_tab, ActiveTab::Library, "📚 Biblioteca");
-                ui.selectable_value(&mut self.active_tab, ActiveTab::NotesEvidence, "📝 Notas y Evidencia");
-                ui.selectable_value(&mut self.active_tab, ActiveTab::Interchange, "📦 Intercambio");
-                ui.selectable_value(&mut self.active_tab, ActiveTab::History, "📜 Historial");
-                ui.selectable_value(&mut self.active_tab, ActiveTab::Connections, "⚡ Conexiones & 1-Clic Burp");
-                ui.selectable_value(&mut self.active_tab, ActiveTab::Calibration, "🔬 Calibrador PICO & RSL");
-                ui.selectable_value(&mut self.active_tab, ActiveTab::ExportsViewer, "💾 Visor de Exportaciones");
+            // Elegant context header
+            ui.horizontal(|ui| {
+                let title = match self.active_tab {
+                    ActiveTab::Project => "Alcance del Proyecto & Preguntas de Investigación",
+                    ActiveTab::Search => "Búsqueda Avanzada Multi-Filtro & Ingesta al Corpus",
+                    ActiveTab::Library => "Biblioteca de Referencias del Proyecto",
+                    ActiveTab::NotesEvidence => "Notas de Lectura & Síntesis de Evidencia",
+                    ActiveTab::Interchange => "Intercambio: Importación y Exportación",
+                    ActiveTab::History => "Historial de Auditoría & Trazabilidad",
+                    ActiveTab::Connections => "Conexiones & Sesiones Burp Suite",
+                    ActiveTab::Calibration => "Calibrador de Ecuaciones PICO & RSL",
+                    ActiveTab::ExportsViewer => "Visor de Archivos Exportados",
+                };
+
+                ui.heading(title);
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if let Some(active_p) = self.get_active_project() {
+                        ui.colored_label(egui::Color32::from_rgb(59, 130, 246), format!("• {}", active_p.name));
+                        ui.label(egui::RichText::new("Proyecto activo:").color(egui::Color32::from_rgb(148, 163, 184)));
+                    } else {
+                        ui.colored_label(egui::Color32::from_rgb(234, 179, 8), "Sin proyecto activo");
+                    }
+                });
             });
             ui.separator();
+            ui.add_space(4.0);
 
-            match self.active_tab {
-                ActiveTab::Project => self.render_project_tab(ui),
-                ActiveTab::Search => self.render_search_tab(ui),
-                ActiveTab::Library => self.render_library_tab(ui),
-                ActiveTab::NotesEvidence => self.render_notes_evidence_tab(ui),
-                ActiveTab::Interchange => self.render_interchange_tab(ui),
-                ActiveTab::History => self.render_history_tab(ui),
-                ActiveTab::Connections => self.render_connections_tab(ui),
-                ActiveTab::Calibration => self.render_calibration_tab(ui),
-                ActiveTab::ExportsViewer => self.render_exports_viewer_tab(ui),
-            }
+            egui::ScrollArea::vertical()
+                .id_salt("central_content_scroll")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    match self.active_tab {
+                        ActiveTab::Project => self.render_project_tab(ui),
+                        ActiveTab::Search => self.render_search_tab(ui),
+                        ActiveTab::Library => self.render_library_tab(ui),
+                        ActiveTab::NotesEvidence => self.render_notes_evidence_tab(ui),
+                        ActiveTab::Interchange => self.render_interchange_tab(ui),
+                        ActiveTab::History => self.render_history_tab(ui),
+                        ActiveTab::Connections => self.render_connections_tab(ui),
+                        ActiveTab::Calibration => self.render_calibration_tab(ui),
+                        ActiveTab::ExportsViewer => self.render_exports_viewer_tab(ui),
+                    }
+                });
         });
 
         // Create Project Modal Window
         if self.show_create_project_modal {
-            egui::Window::new("➕ Crear Nuevo Proyecto de Investigación")
+            egui::Window::new("+ Crear Nuevo Proyecto de Investigación")
                 .collapsible(false)
                 .resizable(false)
                 .show(ui.ctx(), |ui| {
@@ -1215,9 +1315,9 @@ impl McpDesktopApp {
                 ui.label(format!("Revisión: {}", rev));
                 ui.separator();
                 if is_archived {
-                    ui.colored_label(egui::Color32::from_rgb(234, 179, 8), "📁 ARCHIVADO (Solo Lectura)");
+                    ui.colored_label(egui::Color32::from_rgb(234, 179, 8), "● ARCHIVADO (Solo Lectura)");
                 } else {
-                    ui.colored_label(egui::Color32::from_rgb(34, 197, 94), "🟢 ACTIVO");
+                    ui.colored_label(egui::Color32::from_rgb(34, 197, 94), "● ACTIVO");
                 }
             });
 
@@ -1236,7 +1336,7 @@ impl McpDesktopApp {
             ui.text_edit_multiline(&mut self.projects_list[self.selected_project_idx].description);
 
             ui.horizontal(|ui| {
-                if ui.button("💾 Guardar Metadatos").clicked() {
+                if ui.button("Guardar Metadatos").clicked() {
                     let cur_name = self.projects_list[self.selected_project_idx].name.clone();
                     let cur_desc = self.projects_list[self.selected_project_idx].description.clone();
                     match crate::research_client::ResearchClient::update_project(&pid, &cur_name, &cur_desc, None, rev) {
@@ -1251,7 +1351,7 @@ impl McpDesktopApp {
                 }
 
                 if is_archived {
-                    if ui.button("🔓 Desarchivar Proyecto").clicked() {
+                    if ui.button("Desarchivar Proyecto").clicked() {
                         let cur_name = self.projects_list[self.selected_project_idx].name.clone();
                         let cur_desc = self.projects_list[self.selected_project_idx].description.clone();
                         match crate::research_client::ResearchClient::update_project(&pid, &cur_name, &cur_desc, Some(false), rev) {
@@ -1263,7 +1363,7 @@ impl McpDesktopApp {
                         }
                     }
                 } else {
-                    if ui.button("📦 Archivar Proyecto").clicked() {
+                    if ui.button("Archivar Proyecto").clicked() {
                         let cur_name = self.projects_list[self.selected_project_idx].name.clone();
                         let cur_desc = self.projects_list[self.selected_project_idx].description.clone();
                         match crate::research_client::ResearchClient::update_project(&pid, &cur_name, &cur_desc, Some(true), rev) {
@@ -1276,7 +1376,7 @@ impl McpDesktopApp {
                     }
                 }
 
-                if ui.button("🔄 Recargar desde Servidor").clicked() {
+                if ui.button("Recargar desde Servidor").clicked() {
                     self.refresh_projects();
                 }
             });
@@ -1297,13 +1397,13 @@ impl McpDesktopApp {
         ui.columns(2, |cols| {
             // Questions column
             cols[0].group(|ui| {
-                ui.heading("❓ Preguntas de Investigación (RQs)");
+                ui.heading("Preguntas de Investigación (RQs)");
                 if let Some(outline) = &self.outline_data {
                     for (idx, q) in outline.questions.iter().enumerate() {
                         ui.horizontal(|ui| {
                             ui.strong(format!("RQ{}:", idx + 1));
                             ui.label(&q.text);
-                            if ui.button("❌").clicked() {
+                            if ui.button("×").clicked() {
                                 remove_q_idx = Some(idx);
                             }
                         });
@@ -1313,7 +1413,7 @@ impl McpDesktopApp {
                 ui.separator();
                 ui.horizontal(|ui| {
                     ui.text_edit_singleline(&mut self.new_question_text);
-                    if ui.button("➕ Añadir RQ").clicked() {
+                    if ui.button("+ Añadir RQ").clicked() {
                         let text = self.new_question_text.trim().to_string();
                         if !text.is_empty() {
                             if let Some(outline) = &mut self.outline_data {
@@ -1333,13 +1433,13 @@ impl McpDesktopApp {
 
             // Objectives column
             cols[1].group(|ui| {
-                ui.heading("🎯 Objetivos de Investigación (OBJs)");
+                ui.heading("Objetivos de Investigación (OBJs)");
                 if let Some(outline) = &self.outline_data {
                     for (idx, obj) in outline.objectives.iter().enumerate() {
                         ui.horizontal(|ui| {
                             ui.strong(format!("OBJ{}:", idx + 1));
                             ui.label(&obj.text);
-                            if ui.button("❌").clicked() {
+                            if ui.button("×").clicked() {
                                 remove_o_idx = Some(idx);
                             }
                         });
@@ -1349,7 +1449,7 @@ impl McpDesktopApp {
                 ui.separator();
                 ui.horizontal(|ui| {
                     ui.text_edit_singleline(&mut self.new_objective_text);
-                    if ui.button("➕ Añadir OBJ").clicked() {
+                    if ui.button("+ Añadir OBJ").clicked() {
                         let text = self.new_objective_text.trim().to_string();
                         if !text.is_empty() {
                             if let Some(outline) = &mut self.outline_data {
@@ -1696,9 +1796,9 @@ impl McpDesktopApp {
                 ui.group(|ui| {
                     ui.horizontal(|ui| {
                         let kind_badge = match a.kind.as_str() {
-                            "QUOTE" => "💬 CITA",
-                            "PARAPHRASE" => "💡 PARÁFRASIS",
-                            _ => "📝 NOTA",
+                            "QUOTE" => "CITA",
+                            "PARAPHRASE" => "PARÁFRASIS",
+                            _ => "NOTA",
                         };
                         ui.strong(kind_badge);
 
@@ -1707,9 +1807,9 @@ impl McpDesktopApp {
                         }
 
                         let actor_badge = if a.actor_type == "AGENT" {
-                            format!("🤖 AGENT ({})", a.actor_label)
+                            format!("[AGENT] {}", a.actor_label)
                         } else {
-                            format!("👤 HUMAN ({})", a.actor_label)
+                            format!("[HUMAN] {}", a.actor_label)
                         };
                         ui.label(actor_badge);
 
@@ -1721,10 +1821,10 @@ impl McpDesktopApp {
                     ui.label(&a.body);
 
                     if let Some(loc) = &a.locator {
-                        ui.label(format!("📍 Localizador: {}", loc));
+                        ui.label(format!("Localizador: {}", loc));
                     }
                     if let Some(qid) = &a.question_id {
-                        ui.label(format!("❓ Enlace RQ: {}", qid));
+                        ui.label(format!("Enlace RQ: {}", qid));
                     }
                 });
                 ui.add_space(4.0);
@@ -1733,13 +1833,13 @@ impl McpDesktopApp {
     }
 
     fn render_interchange_tab(&mut self, ui: &mut egui::Ui) {
-        ui.heading("📦 Intercambio: Importación, Exportación y Restauración");
+        ui.heading("Intercambio: Importación, Exportación y Restauración");
         ui.label("Importa referencias desde BibTeX, RIS o CSV y exporta proyectos completos o bibliografías.");
         ui.add_space(6.0);
 
         if !self.backend_online {
-            ui.colored_label(egui::Color32::from_rgb(239, 68, 68), "⚠️ Servicio local no disponible.");
-            if ui.button("🔄 Reintentar").clicked() {
+            ui.colored_label(egui::Color32::from_rgb(239, 68, 68), "● Servicio local no disponible.");
+            if ui.button("Reintentar").clicked() {
                 self.refresh_projects();
             }
             return;
@@ -1753,7 +1853,7 @@ impl McpDesktopApp {
         ui.columns(2, |cols| {
             // Import section
             cols[0].group(|ui| {
-                ui.heading("📥 Importar Referencias a Proyecto");
+                ui.heading("Importar Referencias a Proyecto");
                 ui.horizontal(|ui| {
                     ui.label("Formato:");
                     ui.selectable_value(&mut self.import_file_format, "bib".to_string(), "BibTeX (.bib)");
@@ -1765,7 +1865,7 @@ impl McpDesktopApp {
                 ui.text_edit_multiline(&mut self.import_file_content);
 
                 ui.horizontal(|ui| {
-                    if ui.button("🔍 Previsualizar Importación").clicked() {
+                    if ui.button("Previsualizar Importación").clicked() {
                         let content = self.import_file_content.trim();
                         if content.is_empty() {
                             self.add_toast("Pega primero el contenido a importar", true);
@@ -1782,7 +1882,7 @@ impl McpDesktopApp {
                         }
                     }
 
-                    if ui.button("🧹 Limpiar").clicked() {
+                    if ui.button("Limpiar").clicked() {
                         self.import_file_content.clear();
                         self.import_preview = None;
                     }
@@ -1801,7 +1901,7 @@ impl McpDesktopApp {
                     if prev.valid_count > 0 {
                         let prev_id = prev.preview_id.clone();
                         let f_hash = prev.file_hash.clone();
-                        if ui.button("✅ Confirmar e Incorporar a la Biblioteca").clicked() {
+                        if ui.button("✓ Confirmar e Incorporar a la Biblioteca").clicked() {
                             match crate::research_client::ResearchClient::commit_import(&pid, &prev_id, &f_hash) {
                                 Ok(_) => {
                                     self.add_toast("Importación confirmada e incorporada", false);
@@ -1820,7 +1920,7 @@ impl McpDesktopApp {
 
             // Export section
             cols[1].group(|ui| {
-                ui.heading("📤 Exportar Proyecto o Bibliografía");
+                ui.heading("Exportar Proyecto o Bibliografía");
                 ui.horizontal(|ui| {
                     ui.label("Ámbito (Scope):");
                     ui.selectable_value(&mut self.export_scope, "ALL".to_string(), "Proyecto Completo");
@@ -1834,7 +1934,7 @@ impl McpDesktopApp {
                     ui.selectable_value(&mut self.export_format, "PROJECT_JSON".to_string(), "PROJECT_JSON");
                 });
 
-                if ui.button("📤 Generar Exportación").clicked() {
+                if ui.button("Generar Exportación").clicked() {
                     match crate::research_client::ResearchClient::export_project(&pid, &self.export_scope, &self.export_format) {
                         Ok(content) => {
                             self.export_output_text = content;
@@ -1849,13 +1949,13 @@ impl McpDesktopApp {
                 if !self.export_output_text.is_empty() {
                     ui.separator();
                     ui.horizontal(|ui| {
-                        ui.strong("Salida Generada:");
-                        if ui.button("📋 Copiar al Portapapeles").clicked() {
+                        ui.strong("Salida de Exportación:");
+                        if ui.button("Copiar al Portapapeles").clicked() {
                             ui.ctx().copy_text(self.export_output_text.clone());
-                            self.add_toast("Exportación copiada al portapapeles", false);
+                            self.add_toast("Copiado al portapapeles", false);
                         }
                     });
-                    egui::ScrollArea::both().id_salt("export_output_scroll").max_height(300.0).show(ui, |ui| {
+                    egui::ScrollArea::vertical().id_salt("export_preview_scroll").max_height(200.0).show(ui, |ui| {
                         ui.monospace(&self.export_output_text);
                     });
                 }
@@ -1864,20 +1964,20 @@ impl McpDesktopApp {
     }
 
     fn render_history_tab(&mut self, ui: &mut egui::Ui) {
-        ui.heading("📜 Historial y Trazabilidad de Auditoría");
+        ui.heading("Historial y Trazabilidad de Auditoría");
         ui.label("Auditoría append-only de modificaciones del proyecto y ejecuciones de agentes.");
         ui.add_space(6.0);
 
         if !self.backend_online {
-            ui.colored_label(egui::Color32::from_rgb(239, 68, 68), "⚠️ Servicio local no disponible.");
-            if ui.button("🔄 Reintentar").clicked() {
+            ui.colored_label(egui::Color32::from_rgb(239, 68, 68), "● Servicio local no disponible.");
+            if ui.button("Reintentar").clicked() {
                 self.refresh_projects();
             }
             return;
         }
 
         ui.horizontal(|ui| {
-            if ui.button("🔄 Refrescar Eventos del Proyecto").clicked() {
+            if ui.button("Refrescar Eventos del Proyecto").clicked() {
                 self.refresh_active_project_data();
             }
         });
@@ -1891,9 +1991,9 @@ impl McpDesktopApp {
                 ui.group(|ui| {
                     ui.horizontal(|ui| {
                         let actor_badge = if ev.actor_type == "AGENT" {
-                            format!("🤖 AGENT ({})", ev.actor_label)
+                            format!("[AGENT] {}", ev.actor_label)
                         } else {
-                            format!("👤 HUMAN ({})", ev.actor_label)
+                            format!("[HUMAN] {}", ev.actor_label)
                         };
                         ui.colored_label(egui::Color32::from_rgb(168, 85, 247), actor_badge);
 
@@ -1911,7 +2011,7 @@ impl McpDesktopApp {
 
         ui.separator();
         ui.heading("Auditoría de Consultas MCP / Búsquedas");
-        if ui.button("🔄 Refrescar Consultas").clicked() {
+        if ui.button("Refrescar Consultas").clicked() {
             self.history = get_recent_history(50);
         }
         let history_to_render = self.history.clone();
@@ -1941,7 +2041,7 @@ impl McpDesktopApp {
 
         // Global Diagnostic & Health Check Bar
         ui.horizontal(|ui| {
-            let diag_btn = ui.add_enabled(!self.is_diagnosing, egui::Button::new("🧪 Diagnosticar Salud de Conexiones & WAF"));
+            let diag_btn = ui.add_enabled(!self.is_diagnosing, egui::Button::new("Diagnosticar Salud de Conexiones & WAF"));
             if diag_btn.clicked() {
                 self.trigger_async_diagnostics();
             }
@@ -1955,8 +2055,8 @@ impl McpDesktopApp {
         // One-Click Firefox Auto-Extractor
         ui.group(|ui| {
             ui.horizontal(|ui| {
-                ui.label("🦊 Auto-Captura Directa:");
-                if ui.button("⚡ Extraer Automáticamente Sesiones desde Firefox (1-Clic)").clicked() {
+                ui.label("Auto-Captura Directa:");
+                if ui.button("Extraer Automáticamente Sesiones desde Firefox (1-Clic)").clicked() {
                     match extract_cookies_from_firefox() {
                         Ok(res) => {
                             self.status_message = res.message.clone();
@@ -1984,13 +2084,13 @@ impl McpDesktopApp {
                 ui.label("Restricción: Comodines tras guión no expanden.");
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    if ui.button("🌐 Abrir en Burp").clicked() {
+                    if ui.button("Abrir en Burp").clicked() {
                         match launch_browser_for_platform("scopus") {
                             Ok(msg) => self.status_message = msg,
                             Err(e) => self.status_message = e,
                         }
                     }
-                    if ui.button("🧪 Probar").clicked() {
+                    if ui.button("Probar").clicked() {
                         self.trigger_async_test_connection("scopus");
                     }
                 });
@@ -2003,13 +2103,13 @@ impl McpDesktopApp {
                 ui.label("Restricción: Máximo 10 comodines (*).");
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    if ui.button("🌐 Abrir en Burp").clicked() {
+                    if ui.button("Abrir en Burp").clicked() {
                         match launch_browser_for_platform("ieee") {
                             Ok(msg) => self.status_message = msg,
                             Err(e) => self.status_message = e,
                         }
                     }
-                    if ui.button("🧪 Probar").clicked() {
+                    if ui.button("Probar").clicked() {
                         self.trigger_async_test_connection("ieee");
                     }
                 });
@@ -2022,13 +2122,13 @@ impl McpDesktopApp {
                 ui.label("Búsqueda y metadatos públicos directos.");
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    if ui.button("🌐 Abrir en Burp").clicked() {
+                    if ui.button("Abrir en Burp").clicked() {
                         match launch_browser_for_platform("springer") {
                             Ok(msg) => self.status_message = msg,
                             Err(e) => self.status_message = e,
                         }
                     }
-                    if ui.button("🧪 Probar").clicked() {
+                    if ui.button("Probar").clicked() {
                         self.trigger_async_test_connection("springer");
                     }
                 });
@@ -2046,7 +2146,7 @@ impl McpDesktopApp {
         // University Proxy URL Override Box
         ui.add_space(10.0);
         ui.group(|ui| {
-            ui.heading("🏛️ Soporte de Proxy Universitario (EZProxy / OpenAthens)");
+            ui.heading("Soporte de Proxy Universitario (EZProxy / OpenAthens)");
             ui.label("Reescribe las peticiones para acceder con la suscripción de tu universidad (ej. https://ieeexplore-ieee-org.ezproxy.universidad.edu.pe).");
             ui.horizontal(|ui| {
                 ui.label("Base a configurar:");
@@ -2068,7 +2168,7 @@ impl McpDesktopApp {
     fn render_calibration_tab(&mut self, ui: &mut egui::Ui) {
         ui.heading("Estudio de Calibración PICO & Ecuaciones RSL");
         ui.horizontal(|ui| {
-            if ui.button("🧪 Cargar Ecuación RSL de Perturbación Proactiva (ESM_1.tex)").clicked() {
+            if ui.button("Cargar Ecuación RSL de Perturbación Proactiva (ESM_1.tex)").clicked() {
                 self.pico_p = "\"unlearnable*\", \"availability poison*\", \"perturbative availability\", \"error-minimizing noise\", \"indiscriminate poisoning\", \"image cloaking\", \"facial privacy protection\", \"unauthorized training\"".to_string();
                 self.pico_i = "\"countermeasure*\", \"defens*\", \"defenc*\", \"defend*\", \"attack*\", \"break*\", \"bypass*\", \"adversarial training\", \"augment*\", \"purif*\", \"ensemble*\", \"fine-tuning\"".to_string();
                 self.pico_c = "\"baseline*\", \"clean\", \"existing\", \"previous*\", \"benchmark*\", \"original data\"".to_string();
@@ -2077,7 +2177,7 @@ impl McpDesktopApp {
                 self.status_message = "Ecuación de la RSL cargada y traducida.".to_string();
             }
 
-            if ui.button("🔄 Traducir y Validar").clicked() {
+            if ui.button("Traducir y Validar").clicked() {
                 self.translation = Some(translate_pico_query(&self.pico_p, &self.pico_i, &self.pico_c, &self.pico_o));
                 self.status_message = "Ecuación traducida para las 3 plataformas.".to_string();
             }
@@ -2108,14 +2208,14 @@ impl McpDesktopApp {
 
                 // IEEE Linter Check
                 if trans.ieee_valid {
-                    ui.colored_label(egui::Color32::from_rgb(34, 197, 94), format!("✅ IEEE Xplore: {} / 10 comodines utilizados (VÁLIDO)", trans.ieee_wildcard_count));
+                    ui.colored_label(egui::Color32::from_rgb(34, 197, 94), format!("✓ IEEE Xplore: {} / 10 comodines utilizados (VÁLIDO)", trans.ieee_wildcard_count));
                 } else {
-                    ui.colored_label(egui::Color32::from_rgb(239, 68, 68), format!("❌ IEEE Xplore: {} comodines detectados (SUPERA EL LÍMITE DE 10)", trans.ieee_wildcard_count));
+                    ui.colored_label(egui::Color32::from_rgb(239, 68, 68), format!("✗ IEEE Xplore: {} comodines detectados (SUPERA EL LÍMITE DE 10)", trans.ieee_wildcard_count));
                 }
 
                 // Scopus Warnings
                 for w in &trans.scopus_warnings {
-                    ui.colored_label(egui::Color32::GOLD, format!("⚠️ {}", w));
+                    ui.colored_label(egui::Color32::GOLD, format!("Advertencia: {}", w));
                 }
 
                 ui.add_space(6.0);
@@ -2132,46 +2232,47 @@ impl McpDesktopApp {
     }
 
     fn render_search_tab(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Búsqueda Avanzada Multi-Filtro & Ingesta al Corpus Central");
-
-        // Central Corpus Summary Banner
+        // Central Corpus Summary Card
         ui.group(|ui| {
             ui.horizontal(|ui| {
-                ui.strong("🗄️ Corpus Central SLR (default_slr):");
+                ui.strong("Corpus Central SLR (default_slr):");
                 ui.colored_label(egui::Color32::from_rgb(59, 130, 246), format!("{} Artículos Únicos", self.corpus_summary.total_papers));
                 ui.label("·");
                 ui.colored_label(egui::Color32::from_rgb(34, 197, 94), format!("{} Enriquecidos DOI", self.corpus_summary.enriched_count));
                 ui.label("·");
                 ui.colored_label(egui::Color32::LIGHT_BLUE, format!("{} con Abstract", self.corpus_summary.with_abstract_count));
-                if ui.button("🔄").clicked() {
-                    self.corpus_summary = crate::db_client::get_corpus_summary("default_slr");
-                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("↻ Actualizar").clicked() {
+                        self.corpus_summary = crate::db_client::get_corpus_summary("default_slr");
+                    }
+                });
             });
         });
-        ui.add_space(4.0);
+        ui.add_space(6.0);
 
-        ui.horizontal(|ui| {
-            ui.label("Base de datos:");
-            ui.selectable_value(&mut self.selected_db, "ieee".to_string(), "⚡ IEEE Xplore");
-            ui.selectable_value(&mut self.selected_db, "springer".to_string(), "📚 SpringerLink (Sin Login)");
-            ui.selectable_value(&mut self.selected_db, "scopus".to_string(), "🔬 Scopus (Elsevier)");
-        });
-
-        ui.horizontal(|ui| {
-            ui.label("Modo:");
-            ui.selectable_value(&mut self.search_mode, "advanced".to_string(), "Avanzada (Booleana)");
-            ui.selectable_value(&mut self.search_mode, "normal".to_string(), "Normal (Palabras clave)");
-            ui.separator();
-            ui.label("Rango de Años:");
-            ui.add(egui::DragValue::new(&mut self.year_start).range(1990..=2030));
-            ui.label("a");
-            ui.add(egui::DragValue::new(&mut self.year_end).range(1990..=2030));
-        });
-
-        // Dynamic Document Type Filters tailored to the selected database
+        // Database and Mode Selectors Card
         ui.group(|ui| {
             ui.horizontal(|ui| {
-                ui.strong("Filtros por Tipo de Documento:");
+                ui.label(egui::RichText::new("Base de datos:").strong());
+                ui.selectable_value(&mut self.selected_db, "ieee".to_string(), "IEEE Xplore");
+                ui.selectable_value(&mut self.selected_db, "springer".to_string(), "SpringerLink");
+                ui.selectable_value(&mut self.selected_db, "scopus".to_string(), "Scopus (Elsevier)");
+
+                ui.separator();
+                ui.label(egui::RichText::new("Modo:").strong());
+                ui.selectable_value(&mut self.search_mode, "advanced".to_string(), "Avanzada (Booleana)");
+                ui.selectable_value(&mut self.search_mode, "normal".to_string(), "Normal (Palabras clave)");
+
+                ui.separator();
+                ui.label("Rango de Años:");
+                ui.add(egui::DragValue::new(&mut self.year_start).range(1990..=2030));
+                ui.label("a");
+                ui.add(egui::DragValue::new(&mut self.year_end).range(1990..=2030));
+            });
+
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("Filtros por Tipo de Documento:").strong().size(11.5));
                 match self.selected_db.as_str() {
                     "ieee" => {
                         ui.checkbox(&mut self.ieee_periodicals, "Revistas (Journals)");
@@ -2198,51 +2299,55 @@ impl McpDesktopApp {
             });
         });
 
-        ui.add_space(4.0);
-        ui.label("Consulta de Búsqueda:");
+        ui.add_space(6.0);
+        ui.label(egui::RichText::new("Consulta de Búsqueda:").strong());
         ui.text_edit_multiline(&mut self.search_query);
 
+        ui.add_space(4.0);
+        // Primary Search Actions Row
         ui.horizontal(|ui| {
-            // Non-blocking search button
-            let search_btn = ui.add_enabled(!self.is_searching, egui::Button::new("🔍 Búsqueda Rápida"));
+            let search_btn = ui.add_enabled(
+                !self.is_searching,
+                egui::Button::new(egui::RichText::new("  Buscar en Base de Datos  ").strong()),
+            );
             if search_btn.clicked() {
                 self.trigger_async_search();
             }
 
-            // Bulk Ingest controls
+            if self.is_searching {
+                ui.spinner();
+                ui.colored_label(egui::Color32::from_rgb(59, 130, 246), &self.loading_label);
+            }
+
             ui.separator();
+            ui.label(egui::RichText::new("Ingesta al Corpus:").color(egui::Color32::from_rgb(148, 163, 184)));
             ui.label("Lote:");
             ui.add(egui::DragValue::new(&mut self.bulk_ingest_records).range(10..=500));
             ui.checkbox(&mut self.enrich_missing_abstracts, "Enriquecer DOI");
 
-            let ingest_btn = ui.add_enabled(!self.is_ingesting, egui::Button::new("📥 Ingestar Streaming"));
+            let ingest_btn = ui.add_enabled(!self.is_ingesting, egui::Button::new("Ingestar Streaming"));
             if ingest_btn.clicked() {
                 self.trigger_async_ingest();
             }
 
-            let dedup_btn = ui.button("🔄 Desduplicar Corpus");
+            let dedup_btn = ui.button("Desduplicar Corpus");
             if dedup_btn.clicked() {
                 self.trigger_async_deduplicate();
             }
 
-            // Export buttons
             ui.separator();
-            let exp_bib_btn = ui.add_enabled(!self.is_exporting, egui::Button::new("📥 .BIB"));
-            if exp_bib_btn.clicked() {
+            ui.label(egui::RichText::new("Exportar:").color(egui::Color32::from_rgb(148, 163, 184)));
+            if ui.add_enabled(!self.is_exporting, egui::Button::new(".BIB")).clicked() {
                 self.trigger_async_export("bibtex");
             }
-
-            let exp_csv_btn = ui.add_enabled(!self.is_exporting, egui::Button::new("📥 .CSV"));
-            if exp_csv_btn.clicked() {
+            if ui.add_enabled(!self.is_exporting, egui::Button::new(".CSV")).clicked() {
                 self.trigger_async_export("csv");
             }
-
-            let exp_ris_btn = ui.add_enabled(!self.is_exporting, egui::Button::new("📥 .RIS"));
-            if exp_ris_btn.clicked() {
+            if ui.add_enabled(!self.is_exporting, egui::Button::new(".RIS")).clicked() {
                 self.trigger_async_export("ris");
             }
 
-            if self.is_searching || self.is_exporting || self.is_ingesting {
+            if (self.is_exporting || self.is_ingesting) && !self.is_searching {
                 ui.spinner();
                 ui.colored_label(egui::Color32::from_rgb(59, 130, 246), &self.loading_label);
             }
@@ -2254,12 +2359,12 @@ impl McpDesktopApp {
                 ui.add_space(6.0);
                 ui.group(|ui| {
                     ui.horizontal(|ui| {
-                        ui.strong("📋 Vista Previa del BibTeX Exportado:");
-                        if ui.button("📋 Copiar BibTeX").clicked() {
+                        ui.strong("Vista Previa del BibTeX Exportado:");
+                        if ui.button("Copiar BibTeX").clicked() {
                             ui.ctx().copy_text(content.clone());
                             self.status_message = "BibTeX copiado al portapapeles.".to_string();
                         }
-                        if ui.button("❌ Cerrar").clicked() {
+                        if ui.button("Cerrar").clicked() {
                             self.show_bibtex_drawer = false;
                         }
                     });
@@ -2272,7 +2377,7 @@ impl McpDesktopApp {
 
         // Render Retrieved Papers List
         if !self.papers.is_empty() {
-            ui.add_space(8.0);
+            ui.add_space(10.0);
             ui.horizontal(|ui| {
                 ui.heading(format!("Resultados Recuperados ({} en total):", self.total_results));
             });
@@ -2280,43 +2385,41 @@ impl McpDesktopApp {
             let papers_list = self.papers.clone();
             let mut style_to_copy: Option<(String, usize)> = None;
 
-            egui::ScrollArea::vertical().id_salt("search_results_scroll").max_height(350.0).show(ui, |ui| {
-                for (idx, p) in papers_list.iter().enumerate() {
-                    ui.group(|ui| {
+            for (idx, p) in papers_list.iter().enumerate() {
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.colored_label(egui::Color32::from_rgb(59, 130, 246), format!("[{}]", p.year));
+                        ui.strong(&p.title);
+                        ui.colored_label(egui::Color32::GRAY, format!("({})", p.doc_type));
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label(format!("Autores: {}", p.authors.join(", ")));
+                        ui.label("·");
+                        ui.label(format!("Publicación: {}", p.venue));
+                    });
+                    if !p.doi.is_empty() {
                         ui.horizontal(|ui| {
-                            ui.colored_label(egui::Color32::from_rgb(59, 130, 246), format!("[{}]", p.year));
-                            ui.strong(&p.title);
-                            ui.colored_label(egui::Color32::GRAY, format!("({})", p.doc_type));
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label(format!("Autores: {}", p.authors.join(", ")));
-                            ui.label("·");
-                            ui.label(format!("Publicación: {}", p.venue));
-                        });
-                        if !p.doi.is_empty() {
-                            ui.horizontal(|ui| {
-                                ui.monospace(format!("DOI: {}", p.doi));
-                                if !p.url.is_empty() {
-                                    ui.hyperlink_to("🔗 Ver en portal", &p.url);
-                                }
-                            });
-                        }
-                        if !p.abstract_text.is_empty() {
-                            ui.label(format!("Resumen: {}", p.abstract_text));
-                        }
-                        ui.horizontal(|ui| {
-                            ui.label("Cita Rápida:");
-                            ui.selectable_value(&mut self.selected_citation_style, "ieee".to_string(), "IEEE");
-                            ui.selectable_value(&mut self.selected_citation_style, "apa7".to_string(), "APA 7");
-                            ui.selectable_value(&mut self.selected_citation_style, "bibitem".to_string(), "LaTeX");
-                            if ui.button(format!("📋 Copiar ({})", self.selected_citation_style.to_uppercase())).clicked() {
-                                style_to_copy = Some((self.selected_citation_style.clone(), idx));
+                            ui.monospace(format!("DOI: {}", p.doi));
+                            if !p.url.is_empty() {
+                                ui.hyperlink_to("Ver en portal ›", &p.url);
                             }
                         });
+                    }
+                    if !p.abstract_text.is_empty() {
+                        ui.label(format!("Resumen: {}", p.abstract_text));
+                    }
+                    ui.horizontal(|ui| {
+                        ui.label("Cita Rápida:");
+                        ui.selectable_value(&mut self.selected_citation_style, "ieee".to_string(), "IEEE");
+                        ui.selectable_value(&mut self.selected_citation_style, "apa7".to_string(), "APA 7");
+                        ui.selectable_value(&mut self.selected_citation_style, "bibitem".to_string(), "LaTeX");
+                        if ui.button(format!("Copiar ({})", self.selected_citation_style.to_uppercase())).clicked() {
+                            style_to_copy = Some((self.selected_citation_style.clone(), idx));
+                        }
                     });
-                    ui.add_space(3.0);
-                }
-            });
+                });
+                ui.add_space(4.0);
+            }
 
             if let Some((style, idx)) = style_to_copy {
                 if let Some(target_paper) = papers_list.get(idx) {
@@ -2329,16 +2432,16 @@ impl McpDesktopApp {
     }
 
     fn render_exports_viewer_tab(&mut self, ui: &mut egui::Ui) {
-        ui.heading("📁 Visor de Exportaciones & Metadatos BibTeX / CSV / RIS");
+        ui.heading("Visor de Exportaciones & Metadatos BibTeX / CSV / RIS");
         ui.label("Explora, inspecciona la sintaxis de citas y copia entradas directamente sin salir de la aplicación.");
 
         ui.horizontal(|ui| {
-            if ui.button("🔄 Refrescar Exportaciones").clicked() {
+            if ui.button("Refrescar Exportaciones").clicked() {
                 self.exports_list = get_recent_exports(50);
                 self.status_message = format!("Se encontraron {} exportaciones registradas.", self.exports_list.len());
             }
 
-            if ui.button("📂 Abrir Carpeta exports/ en Administrador").clicked() {
+            if ui.button("Abrir Carpeta exports/ en Administrador").clicked() {
                 let _ = std::process::Command::new("xdg-open")
                     .arg("/home/glender/Proyectos/MCPCONECCT/exports")
                     .spawn();
@@ -2367,11 +2470,11 @@ impl McpDesktopApp {
                     for exp in &self.exports_list {
                         let is_selected = self.selected_export.as_ref().map(|s| s.id) == Some(exp.id);
                         let badge = if exp.format == "bib" || exp.format == "bibtex" {
-                            "📚 BIB"
+                            "[BIB]"
                         } else if exp.format == "ris" {
-                            "📑 RIS"
+                            "[RIS]"
                         } else {
-                            "📊 CSV"
+                            "[CSV]"
                         };
                         let label = format!("{} {} ({} hits) - {}", badge, exp.filename, exp.record_count, exp.database.to_uppercase());
 
@@ -2393,7 +2496,7 @@ impl McpDesktopApp {
                     ui.horizontal(|ui| {
                         ui.heading(&exp.filename);
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.button("📋 Copiar Contenido").clicked() {
+                            if ui.button("Copiar Contenido").clicked() {
                                 ui.ctx().copy_text(self.selected_export_content.clone());
                                 self.status_message = format!("Contenido de {} copiado al portapapeles.", exp.filename);
                             }
