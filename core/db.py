@@ -153,6 +153,14 @@ def init_db() -> None:
 
         conn.commit()
 
+    # Automatically run migrations
+    try:
+        from core.migrations.runner import run_migrations
+        run_migrations()
+    except Exception as e:
+        import logging
+        logging.getLogger("mcpconecct.db").error(f"Error executing schema migrations: {e}")
+
 
 # Initialize on import
 init_db()

@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse
 
 from config import settings
 from dashboard.routes.api import router as api_router
+from dashboard.routes.research_api import router as research_router
 from core.db import get_search_history, get_query_iterations, get_exports
 from core.http_client import SessionStore
 
@@ -21,11 +22,12 @@ STATIC_DIR = BASE_DIR / "static"
 app = FastAPI(
     title="MCPCONECCT Dashboard",
     description="Academic Search, PICO Calibration & Agent Observability Hub",
-    version="1.0.0",
+    version="2.0.0",
 )
 
-# Mount API
+# Mount API routers (Block 1 + Block 2)
 app.include_router(api_router)
+app.include_router(research_router)
 
 # Mount Static & Templates
 STATIC_DIR.mkdir(parents=True, exist_ok=True)

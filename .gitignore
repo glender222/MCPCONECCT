@@ -41,6 +41,7 @@ config/auth_store.json
 # SQLite Databases & Local Audit Logs
 data/*.db*
 data/*.sqlite*
+data/backups/
 !data/.gitkeep
 
 # Exported files (BibTeX, CSV, RIS)

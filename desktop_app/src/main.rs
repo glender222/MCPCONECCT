@@ -3,6 +3,7 @@ mod burp_launcher;
 mod db_client;
 mod firefox_extractor;
 mod pico_translator;
+mod research_client;
 
 use app::McpDesktopApp;
 

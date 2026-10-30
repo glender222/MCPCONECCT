@@ -8,11 +8,15 @@ use crate::db_client::{get_recent_history, get_recent_exports, SearchRecord, Exp
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum ActiveTab {
+    Project,
+    Search,
+    Library,
+    NotesEvidence,
+    Interchange,
+    History,
     Connections,
     Calibration,
-    Search,
     ExportsViewer,
-    AgentAudit,
 }
 
 #[derive(PartialEq, Clone, Copy, Debug)]
@@ -191,6 +195,46 @@ pub struct McpDesktopApp {
     pub corpus_summary: crate::db_client::CorpusSummary,
     pub is_ingesting: bool,
     pub is_diagnosing: bool,
+
+    // Block 2 Research State
+    pub projects_list: Vec<crate::research_client::ProjectItem>,
+    pub selected_project_idx: usize,
+    pub new_project_name: String,
+    pub new_project_desc: String,
+    pub new_project_type: String,
+    pub show_create_project_modal: bool,
+    pub backend_online: bool,
+    pub backend_error: Option<String>,
+
+    // Project View Outline
+    pub outline_data: Option<crate::research_client::OutlineData>,
+    pub new_question_text: String,
+    pub new_objective_text: String,
+
+    // Library View
+    pub library_papers: Vec<crate::research_client::PublicationDetail>,
+    pub library_q: String,
+    pub library_status_filter: String,
+    pub selected_library_paper_id: Option<String>,
+
+    // Notes & Evidence View
+    pub annotations_list: Vec<crate::research_client::AnnotationItem>,
+    pub new_annot_kind: String,
+    pub new_annot_source_kind: String,
+    pub new_annot_locator: String,
+    pub new_annot_body: String,
+    pub new_annot_question_id: String,
+
+    // Interchange View
+    pub import_file_content: String,
+    pub import_file_format: String,
+    pub import_preview: Option<crate::research_client::ImportPreviewData>,
+    pub export_scope: String,
+    pub export_format: String,
+    pub export_output_text: String,
+
+    // History View
+    pub project_events: Vec<crate::research_client::EventItem>,
 }
 
 impl Default for McpDesktopApp {
@@ -265,7 +309,43 @@ impl Default for McpDesktopApp {
             selected_export_content: first_content,
 
             history: get_recent_history(50),
+
+            projects_list: Vec::new(),
+            selected_project_idx: 0,
+            new_project_name: String::new(),
+            new_project_desc: String::new(),
+            new_project_type: "Systematic Literature Review".to_string(),
+            show_create_project_modal: false,
+            backend_online: true,
+            backend_error: None,
+
+            outline_data: None,
+            new_question_text: String::new(),
+            new_objective_text: String::new(),
+
+            library_papers: Vec::new(),
+            library_q: String::new(),
+            library_status_filter: "ALL".to_string(),
+            selected_library_paper_id: None,
+
+            annotations_list: Vec::new(),
+            new_annot_kind: "NOTE".to_string(),
+            new_annot_source_kind: "NONE".to_string(),
+            new_annot_locator: String::new(),
+            new_annot_body: String::new(),
+            new_annot_question_id: String::new(),
+
+            import_file_content: String::new(),
+            import_file_format: "bib".to_string(),
+            import_preview: None,
+            export_scope: "ALL".to_string(),
+            export_format: "BIB".to_string(),
+            export_output_text: String::new(),
+
+            project_events: Vec::new(),
         };
+
+        app.refresh_projects();
 
         if std::env::var("MCPCONECCT_AUTO_SEARCH").is_ok() {
             app.trigger_async_search();
@@ -276,6 +356,64 @@ impl Default for McpDesktopApp {
 }
 
 impl McpDesktopApp {
+    pub fn refresh_projects(&mut self) {
+        match crate::research_client::ResearchClient::list_projects() {
+            Ok(projects) => {
+                self.backend_online = true;
+                self.backend_error = None;
+                self.projects_list = projects;
+                if self.selected_project_idx >= self.projects_list.len() && !self.projects_list.is_empty() {
+                    self.selected_project_idx = 0;
+                }
+                self.refresh_active_project_data();
+            }
+            Err(e) => {
+                self.backend_online = false;
+                self.backend_error = Some(e.clone());
+                self.status_message = format!("⚠️ Servicio local no disponible: {}", e);
+            }
+        }
+    }
+
+    pub fn get_active_project_id(&self) -> Option<String> {
+        self.projects_list.get(self.selected_project_idx).map(|p| p.project_id.clone())
+    }
+
+    pub fn refresh_active_project_data(&mut self) {
+        let Some(pid) = self.get_active_project_id() else {
+            self.outline_data = None;
+            self.library_papers.clear();
+            self.annotations_list.clear();
+            self.project_events.clear();
+            return;
+        };
+
+        // Outline
+        if let Ok(outline) = crate::research_client::ResearchClient::get_outline(&pid) {
+            self.outline_data = Some(outline);
+        }
+
+        // Library
+        let status_filter = if self.library_status_filter == "ALL" {
+            None
+        } else {
+            Some(self.library_status_filter.as_str())
+        };
+        if let Ok(papers) = crate::research_client::ResearchClient::list_publications(&pid, &self.library_q, status_filter) {
+            self.library_papers = papers;
+        }
+
+        // Annotations
+        if let Ok(annots) = crate::research_client::ResearchClient::list_annotations(&pid, self.selected_library_paper_id.as_deref()) {
+            self.annotations_list = annots;
+        }
+
+        // Events
+        if let Ok(events) = crate::research_client::ResearchClient::list_events(&pid) {
+            self.project_events = events;
+        }
+    }
+
     pub fn get_selected_doc_types(&self) -> Vec<String> {
         let mut types = Vec::new();
         match self.selected_db.as_str() {
@@ -825,6 +963,55 @@ impl eframe::App for McpDesktopApp {
             ui.horizontal(|ui| {
                 ui.heading("🎓 MCPCONECCT · Academic Core Desktop");
 
+                ui.separator();
+
+                // Project Selector Combobox
+                if self.projects_list.is_empty() {
+                    ui.colored_label(egui::Color32::from_rgb(234, 179, 8), "📁 Sin proyectos");
+                    if ui.button("➕ Crear Proyecto").clicked() {
+                        self.show_create_project_modal = true;
+                    }
+                } else {
+                    let current_name = self.projects_list.get(self.selected_project_idx)
+                        .map(|p| p.name.clone())
+                        .unwrap_or_else(|| "Seleccionar Proyecto".to_string());
+
+                    let mut project_changed = false;
+                    egui::ComboBox::from_id_salt("header_project_combobox")
+                        .selected_text(format!("📁 {}", current_name))
+                        .show_ui(ui, |ui| {
+                            for (i, p) in self.projects_list.iter().enumerate() {
+                                let label = if p.archived {
+                                    format!("📁 {} [Archivado]", p.name)
+                                } else {
+                                    format!("📁 {}", p.name)
+                                };
+                                if ui.selectable_value(&mut self.selected_project_idx, i, label).clicked() {
+                                    project_changed = true;
+                                }
+                            }
+                        });
+                    if project_changed {
+                        self.refresh_active_project_data();
+                    }
+
+                    if ui.button("➕ Nuevo").clicked() {
+                        self.show_create_project_modal = true;
+                    }
+                }
+
+                ui.separator();
+
+                // Backend Connectivity Indicator
+                if self.backend_online {
+                    ui.colored_label(egui::Color32::from_rgb(34, 197, 94), "🟢 Backend Conectado");
+                } else {
+                    ui.colored_label(egui::Color32::from_rgb(239, 68, 68), "⚠️ Servicio local no disponible");
+                    if ui.button("🔄 Reintentar").clicked() {
+                        self.refresh_projects();
+                    }
+                }
+
                 // Right side controls: Theme switch, Burp status, Loading Spinner
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Theme Switcher
@@ -880,23 +1067,78 @@ impl eframe::App for McpDesktopApp {
         // Main Central Panel
         egui::CentralPanel::default().show(ui, |ui| {
             // Tab Selector Navigation
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.selectable_value(&mut self.active_tab, ActiveTab::Project, "📁 Proyecto");
+                ui.selectable_value(&mut self.active_tab, ActiveTab::Search, "🔍 Búsqueda");
+                ui.selectable_value(&mut self.active_tab, ActiveTab::Library, "📚 Biblioteca");
+                ui.selectable_value(&mut self.active_tab, ActiveTab::NotesEvidence, "📝 Notas y Evidencia");
+                ui.selectable_value(&mut self.active_tab, ActiveTab::Interchange, "📦 Intercambio");
+                ui.selectable_value(&mut self.active_tab, ActiveTab::History, "📜 Historial");
                 ui.selectable_value(&mut self.active_tab, ActiveTab::Connections, "⚡ Conexiones & 1-Clic Burp");
                 ui.selectable_value(&mut self.active_tab, ActiveTab::Calibration, "🔬 Calibrador PICO & RSL");
-                ui.selectable_value(&mut self.active_tab, ActiveTab::Search, "🔍 Búsqueda Avanzada Multi-Filtro");
-                ui.selectable_value(&mut self.active_tab, ActiveTab::ExportsViewer, "📁 Visor de Exportaciones & BibTeX");
-                ui.selectable_value(&mut self.active_tab, ActiveTab::AgentAudit, "🤖 Auditoría de Agentes");
+                ui.selectable_value(&mut self.active_tab, ActiveTab::ExportsViewer, "💾 Visor de Exportaciones");
             });
             ui.separator();
 
             match self.active_tab {
+                ActiveTab::Project => self.render_project_tab(ui),
+                ActiveTab::Search => self.render_search_tab(ui),
+                ActiveTab::Library => self.render_library_tab(ui),
+                ActiveTab::NotesEvidence => self.render_notes_evidence_tab(ui),
+                ActiveTab::Interchange => self.render_interchange_tab(ui),
+                ActiveTab::History => self.render_history_tab(ui),
                 ActiveTab::Connections => self.render_connections_tab(ui),
                 ActiveTab::Calibration => self.render_calibration_tab(ui),
-                ActiveTab::Search => self.render_search_tab(ui),
                 ActiveTab::ExportsViewer => self.render_exports_viewer_tab(ui),
-                ActiveTab::AgentAudit => self.render_audit_tab(ui),
             }
         });
+
+        // Create Project Modal Window
+        if self.show_create_project_modal {
+            egui::Window::new("➕ Crear Nuevo Proyecto de Investigación")
+                .collapsible(false)
+                .resizable(false)
+                .show(ui.ctx(), |ui| {
+                    ui.label("Nombre del Proyecto (1-120 caracteres):");
+                    ui.text_edit_singleline(&mut self.new_project_name);
+
+                    ui.label("Tipo de Investigación (ej. Systematic Literature Review):");
+                    ui.text_edit_singleline(&mut self.new_project_type);
+
+                    ui.label("Descripción del Proyecto:");
+                    ui.text_edit_multiline(&mut self.new_project_desc);
+
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("Crear Proyecto").clicked() {
+                            let name = self.new_project_name.trim();
+                            if name.is_empty() {
+                                self.add_toast("El nombre no puede estar vacío", true);
+                            } else {
+                                match crate::research_client::ResearchClient::create_project(name, &self.new_project_desc, &self.new_project_type) {
+                                    Ok(proj) => {
+                                        self.add_toast(format!("Proyecto '{}' creado", proj.name), false);
+                                        self.show_create_project_modal = false;
+                                        self.new_project_name.clear();
+                                        self.new_project_desc.clear();
+                                        self.refresh_projects();
+                                        if let Some(pos) = self.projects_list.iter().position(|p| p.project_id == proj.project_id) {
+                                            self.selected_project_idx = pos;
+                                            self.refresh_active_project_data();
+                                        }
+                                    }
+                                    Err(e) => {
+                                        self.add_toast(format!("Error: {}", e), true);
+                                    }
+                                }
+                            }
+                        }
+                        if ui.button("Cancelar").clicked() {
+                            self.show_create_project_modal = false;
+                        }
+                    });
+                });
+        }
 
         // Floating Toast Notification System (bottom right)
         self.toasts.retain(|t| t.created_at.elapsed().as_secs_f32() < 4.0);
@@ -926,6 +1168,772 @@ impl eframe::App for McpDesktopApp {
 }
 
 impl McpDesktopApp {
+    fn render_project_tab(&mut self, ui: &mut egui::Ui) {
+        ui.heading("📁 Gestión de Proyecto, Preguntas y Objetivos");
+        ui.label("Define el alcance, formula preguntas de investigación (RQs) y objetivos alineados.");
+        ui.add_space(6.0);
+
+        if !self.backend_online {
+            ui.group(|ui| {
+                ui.colored_label(egui::Color32::from_rgb(239, 68, 68), "⚠️ Servicio local no disponible.");
+                ui.label("No se pudo conectar con el servidor backend en http://127.0.0.1:8765.");
+                if let Some(err) = &self.backend_error {
+                    ui.monospace(err);
+                }
+                if ui.button("🔄 Reintentar Conexión").clicked() {
+                    self.refresh_projects();
+                }
+            });
+            return;
+        }
+
+        if self.projects_list.is_empty() {
+            ui.group(|ui| {
+                ui.label("No se han creado proyectos aún.");
+                if ui.button("➕ Crear Primer Proyecto").clicked() {
+                    self.show_create_project_modal = true;
+                }
+            });
+            return;
+        }
+
+        if self.selected_project_idx >= self.projects_list.len() {
+            self.selected_project_idx = 0;
+        }
+
+        let p_orig = self.projects_list[self.selected_project_idx].clone();
+        let pid = p_orig.project_id.clone();
+        let rev = p_orig.revision;
+        let is_archived = p_orig.archived;
+
+        // Project Metadata Box
+        ui.group(|ui| {
+            ui.horizontal(|ui| {
+                ui.strong("ID del Proyecto:");
+                ui.monospace(&pid);
+                ui.separator();
+                ui.label(format!("Revisión: {}", rev));
+                ui.separator();
+                if is_archived {
+                    ui.colored_label(egui::Color32::from_rgb(234, 179, 8), "📁 ARCHIVADO (Solo Lectura)");
+                } else {
+                    ui.colored_label(egui::Color32::from_rgb(34, 197, 94), "🟢 ACTIVO");
+                }
+            });
+
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.label("Nombre:");
+                ui.text_edit_singleline(&mut self.projects_list[self.selected_project_idx].name);
+            });
+
+            ui.horizontal(|ui| {
+                ui.label("Tipo de Investigación:");
+                ui.text_edit_singleline(&mut self.projects_list[self.selected_project_idx].research_type);
+            });
+
+            ui.label("Descripción del Proyecto:");
+            ui.text_edit_multiline(&mut self.projects_list[self.selected_project_idx].description);
+
+            ui.horizontal(|ui| {
+                if ui.button("💾 Guardar Metadatos").clicked() {
+                    let cur_name = self.projects_list[self.selected_project_idx].name.clone();
+                    let cur_desc = self.projects_list[self.selected_project_idx].description.clone();
+                    match crate::research_client::ResearchClient::update_project(&pid, &cur_name, &cur_desc, None, rev) {
+                        Ok(updated) => {
+                            self.add_toast("Metadatos de proyecto guardados", false);
+                            self.projects_list[self.selected_project_idx] = updated;
+                        }
+                        Err(e) => {
+                            self.add_toast(format!("Error guardando: {}", e), true);
+                        }
+                    }
+                }
+
+                if is_archived {
+                    if ui.button("🔓 Desarchivar Proyecto").clicked() {
+                        let cur_name = self.projects_list[self.selected_project_idx].name.clone();
+                        let cur_desc = self.projects_list[self.selected_project_idx].description.clone();
+                        match crate::research_client::ResearchClient::update_project(&pid, &cur_name, &cur_desc, Some(false), rev) {
+                            Ok(updated) => {
+                                self.add_toast("Proyecto desarchivado", false);
+                                self.projects_list[self.selected_project_idx] = updated;
+                            }
+                            Err(e) => self.add_toast(format!("Error: {}", e), true),
+                        }
+                    }
+                } else {
+                    if ui.button("📦 Archivar Proyecto").clicked() {
+                        let cur_name = self.projects_list[self.selected_project_idx].name.clone();
+                        let cur_desc = self.projects_list[self.selected_project_idx].description.clone();
+                        match crate::research_client::ResearchClient::update_project(&pid, &cur_name, &cur_desc, Some(true), rev) {
+                            Ok(updated) => {
+                                self.add_toast("Proyecto archivado", false);
+                                self.projects_list[self.selected_project_idx] = updated;
+                            }
+                            Err(e) => self.add_toast(format!("Error: {}", e), true),
+                        }
+                    }
+                }
+
+                if ui.button("🔄 Recargar desde Servidor").clicked() {
+                    self.refresh_projects();
+                }
+            });
+        });
+
+        ui.add_space(8.0);
+
+        // Questions & Objectives Outline
+        if self.outline_data.is_none() {
+            if let Ok(outline) = crate::research_client::ResearchClient::get_outline(&pid) {
+                self.outline_data = Some(outline);
+            }
+        }
+
+        let mut remove_q_idx = None;
+        let mut remove_o_idx = None;
+
+        ui.columns(2, |cols| {
+            // Questions column
+            cols[0].group(|ui| {
+                ui.heading("❓ Preguntas de Investigación (RQs)");
+                if let Some(outline) = &self.outline_data {
+                    for (idx, q) in outline.questions.iter().enumerate() {
+                        ui.horizontal(|ui| {
+                            ui.strong(format!("RQ{}:", idx + 1));
+                            ui.label(&q.text);
+                            if ui.button("❌").clicked() {
+                                remove_q_idx = Some(idx);
+                            }
+                        });
+                    }
+                }
+
+                ui.separator();
+                ui.horizontal(|ui| {
+                    ui.text_edit_singleline(&mut self.new_question_text);
+                    if ui.button("➕ Añadir RQ").clicked() {
+                        let text = self.new_question_text.trim().to_string();
+                        if !text.is_empty() {
+                            if let Some(outline) = &mut self.outline_data {
+                                let pos = outline.questions.len() as i64;
+                                outline.questions.push(crate::research_client::QuestionItem {
+                                    question_id: None,
+                                    text,
+                                    position: pos,
+                                    revision: 1,
+                                });
+                                self.new_question_text.clear();
+                            }
+                        }
+                    }
+                });
+            });
+
+            // Objectives column
+            cols[1].group(|ui| {
+                ui.heading("🎯 Objetivos de Investigación (OBJs)");
+                if let Some(outline) = &self.outline_data {
+                    for (idx, obj) in outline.objectives.iter().enumerate() {
+                        ui.horizontal(|ui| {
+                            ui.strong(format!("OBJ{}:", idx + 1));
+                            ui.label(&obj.text);
+                            if ui.button("❌").clicked() {
+                                remove_o_idx = Some(idx);
+                            }
+                        });
+                    }
+                }
+
+                ui.separator();
+                ui.horizontal(|ui| {
+                    ui.text_edit_singleline(&mut self.new_objective_text);
+                    if ui.button("➕ Añadir OBJ").clicked() {
+                        let text = self.new_objective_text.trim().to_string();
+                        if !text.is_empty() {
+                            if let Some(outline) = &mut self.outline_data {
+                                let pos = outline.objectives.len() as i64;
+                                outline.objectives.push(crate::research_client::ObjectiveItem {
+                                    objective_id: None,
+                                    text,
+                                    position: pos,
+                                    revision: 1,
+                                });
+                                self.new_objective_text.clear();
+                            }
+                        }
+                    }
+                });
+            });
+        });
+
+        if let Some(idx) = remove_q_idx {
+            if let Some(outline) = &mut self.outline_data {
+                outline.questions.remove(idx);
+                for (i, q) in outline.questions.iter_mut().enumerate() {
+                    q.position = i as i64;
+                }
+            }
+        }
+        if let Some(idx) = remove_o_idx {
+            if let Some(outline) = &mut self.outline_data {
+                outline.objectives.remove(idx);
+                for (i, o) in outline.objectives.iter_mut().enumerate() {
+                    o.position = i as i64;
+                }
+            }
+        }
+
+        ui.add_space(6.0);
+        if ui.button("💾 Guardar Esquema Completo (Preguntas y Objetivos)").clicked() {
+            if let Some(outline) = &self.outline_data {
+                let out_pid = outline.project_id.clone();
+                let out_rev = outline.revision;
+                let qs = outline.questions.clone();
+                let objs = outline.objectives.clone();
+                match crate::research_client::ResearchClient::set_outline(&out_pid, out_rev, qs, objs) {
+                    Ok(new_outline) => {
+                        self.outline_data = Some(new_outline);
+                        self.add_toast("Esquema guardado exitosamente", false);
+                        self.refresh_projects();
+                    }
+                    Err(e) => {
+                        self.add_toast(format!("Error guardando esquema: {}", e), true);
+                    }
+                }
+            }
+        }
+    }
+
+    fn render_library_tab(&mut self, ui: &mut egui::Ui) {
+        ui.heading("📚 Biblioteca del Proyecto");
+        ui.label("Publicaciones, estados de lectura, etiquetas y colecciones asociadas.");
+        ui.add_space(6.0);
+
+        if !self.backend_online {
+            ui.colored_label(egui::Color32::from_rgb(239, 68, 68), "⚠️ Servicio local no disponible.");
+            if ui.button("🔄 Reintentar").clicked() {
+                self.refresh_projects();
+            }
+            return;
+        }
+
+        let Some(pid) = self.get_active_project_id() else {
+            ui.label("Selecciona o crea un proyecto para ver su biblioteca.");
+            return;
+        };
+
+        // Filter Bar
+        ui.horizontal(|ui| {
+            ui.label("🔍 Buscar:");
+            ui.text_edit_singleline(&mut self.library_q);
+
+            ui.separator();
+            ui.label("Estado de Lectura:");
+            let prev_status = self.library_status_filter.clone();
+            ui.selectable_value(&mut self.library_status_filter, "ALL".to_string(), "Todos");
+            ui.selectable_value(&mut self.library_status_filter, "UNREAD".to_string(), "⚪ No Leído");
+            ui.selectable_value(&mut self.library_status_filter, "READING".to_string(), "🔵 Leyendo");
+            ui.selectable_value(&mut self.library_status_filter, "READ".to_string(), "🟢 Leído");
+
+            if self.library_status_filter != prev_status || ui.button("🔍 Filtrar").clicked() {
+                self.refresh_active_project_data();
+            }
+
+            ui.separator();
+            if ui.button("🔄 Refrescar").clicked() {
+                self.refresh_active_project_data();
+            }
+        });
+
+        ui.add_space(6.0);
+
+        if self.library_papers.is_empty() {
+            ui.colored_label(egui::Color32::GRAY, "No hay publicaciones en la biblioteca de este proyecto con los filtros actuales.");
+            ui.label("Puedes buscar publicaciones en la pestaña 'Búsqueda' o importar referencias en 'Intercambio'.");
+            return;
+        }
+
+        ui.strong(format!("Publicaciones en Biblioteca ({} encontradas):", self.library_papers.len()));
+
+        let papers_to_render = self.library_papers.clone();
+        let mut status_update: Option<(String, String)> = None;
+        let mut open_notes_for: Option<String> = None;
+
+        egui::ScrollArea::vertical().id_salt("library_papers_scroll").max_height(480.0).show(ui, |ui| {
+            for p in &papers_to_render {
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        let status_badge = match p.reading_status.as_str() {
+                            "READ" => "🟢 LEÍDO",
+                            "READING" => "🔵 LEYENDO",
+                            _ => "⚪ NO LEÍDO",
+                        };
+                        ui.strong(status_badge);
+
+                        if let Some(y) = p.year {
+                            ui.colored_label(egui::Color32::from_rgb(59, 130, 246), format!("[{}]", y));
+                        }
+                        ui.heading(&p.title);
+                    });
+
+                    ui.horizontal(|ui| {
+                        if !p.authors.is_empty() {
+                            ui.label(format!("Autores: {}", p.authors.join(", ")));
+                        }
+                        if let Some(v) = &p.venue {
+                            ui.label("·");
+                            ui.label(format!("Publicación: {}", v));
+                        }
+                    });
+
+                    if let Some(doi) = &p.doi {
+                        ui.horizontal(|ui| {
+                            ui.monospace(format!("DOI: {}", doi));
+                            if !p.url.is_empty() {
+                                ui.hyperlink_to("🔗 Ver Enlace", &p.url);
+                            }
+                        });
+                    }
+
+                    // Reading status pills / transitions
+                    ui.horizontal(|ui| {
+                        ui.label("Cambiar Estado:");
+                        if p.reading_status != "UNREAD" && ui.button("⚪ No Leído").clicked() {
+                            status_update = Some((p.publication_id.clone(), "UNREAD".to_string()));
+                        }
+                        if p.reading_status != "READING" && ui.button("🔵 Leyendo").clicked() {
+                            status_update = Some((p.publication_id.clone(), "READING".to_string()));
+                        }
+                        if p.reading_status != "READ" && ui.button("🟢 Leído").clicked() {
+                            status_update = Some((p.publication_id.clone(), "READING".to_string()));
+                        }
+
+                        ui.separator();
+                        if ui.button("📝 Ver / Añadir Notas y Evidencias").clicked() {
+                            open_notes_for = Some(p.publication_id.clone());
+                        }
+                    });
+                });
+                ui.add_space(4.0);
+            }
+        });
+
+        if let Some((pub_id, new_stat)) = status_update {
+            let _ = crate::research_client::ResearchClient::update_reading_status(&pid, &pub_id, &new_stat);
+            self.refresh_active_project_data();
+        }
+
+        if let Some(pub_id) = open_notes_for {
+            self.selected_library_paper_id = Some(pub_id);
+            self.active_tab = ActiveTab::NotesEvidence;
+            self.refresh_active_project_data();
+        }
+    }
+
+    fn render_notes_evidence_tab(&mut self, ui: &mut egui::Ui) {
+        ui.heading("📝 Notas y Evidencia Textual");
+        ui.label("Registra notas libres, citas textuales y paráfrasis con procedencia estricta.");
+        ui.add_space(6.0);
+
+        if !self.backend_online {
+            ui.colored_label(egui::Color32::from_rgb(239, 68, 68), "⚠️ Servicio local no disponible.");
+            if ui.button("🔄 Reintentar").clicked() {
+                self.refresh_projects();
+            }
+            return;
+        }
+
+        let Some(pid) = self.get_active_project_id() else {
+            ui.label("Selecciona un proyecto para gestionar notas.");
+            return;
+        };
+
+        // Publication selector
+        ui.horizontal(|ui| {
+            ui.label("Publicación:");
+            let current_pub_title = self.library_papers.iter()
+                .find(|p| Some(&p.publication_id) == self.selected_library_paper_id.as_ref())
+                .map(|p| p.title.clone())
+                .unwrap_or_else(|| "Todas / Ninguna seleccionada".to_string());
+
+            let mut change_paper_to = None;
+            egui::ComboBox::from_id_salt("notes_pub_selector")
+                .selected_text(current_pub_title)
+                .show_ui(ui, |ui| {
+                    if ui.selectable_label(self.selected_library_paper_id.is_none(), "Todas las publicaciones").clicked() {
+                        change_paper_to = Some(None);
+                    }
+                    for p in &self.library_papers {
+                        let selected = Some(&p.publication_id) == self.selected_library_paper_id.as_ref();
+                        if ui.selectable_label(selected, &p.title).clicked() {
+                            change_paper_to = Some(Some(p.publication_id.clone()));
+                        }
+                    }
+                });
+
+            if let Some(target) = change_paper_to {
+                self.selected_library_paper_id = target;
+                self.refresh_active_project_data();
+            }
+
+            if ui.button("🔄 Refrescar Notas").clicked() {
+                self.refresh_active_project_data();
+            }
+        });
+
+        ui.add_space(8.0);
+
+        // Form to add annotation
+        if let Some(target_pub_id) = self.selected_library_paper_id.clone() {
+            ui.group(|ui| {
+                ui.strong("➕ Crear Nueva Nota o Evidencia Textual");
+
+                ui.horizontal(|ui| {
+                    ui.label("Tipo:");
+                    ui.selectable_value(&mut self.new_annot_kind, "NOTE".to_string(), "📝 NOTA (Libre)");
+                    ui.selectable_value(&mut self.new_annot_kind, "QUOTE".to_string(), "💬 CITA (Textual)");
+                    ui.selectable_value(&mut self.new_annot_kind, "PARAPHRASE".to_string(), "💡 PARÁFRASIS");
+                });
+
+                if self.new_annot_kind == "NOTE" {
+                    self.new_annot_source_kind = "NONE".to_string();
+                    ui.label("Procedencia: Ninguna (Nota libre)");
+                } else {
+                    ui.horizontal(|ui| {
+                        ui.label("Origen del Texto:");
+                        ui.selectable_value(&mut self.new_annot_source_kind, "ABSTRACT".to_string(), "Resumen (Abstract)");
+                        ui.selectable_value(&mut self.new_annot_source_kind, "FULLTEXT".to_string(), "Texto Completo (Fulltext)");
+                    });
+
+                    if self.new_annot_source_kind == "ABSTRACT" {
+                        ui.colored_label(egui::Color32::from_rgb(59, 130, 246), "ℹ️ Etiqueta obligatoria: 'Basado en resumen' (Localizador deshabilitado).");
+                    } else if self.new_annot_source_kind == "FULLTEXT" {
+                        ui.horizontal(|ui| {
+                            ui.label("Localizador (Obligatorio 1-200 caracteres, ej: 'p. 7, sección 3.2'):");
+                            ui.text_edit_singleline(&mut self.new_annot_locator);
+                        });
+                    }
+                }
+
+                // Question link selector
+                if let Some(outline) = &self.outline_data {
+                    if !outline.questions.is_empty() {
+                        ui.horizontal(|ui| {
+                            ui.label("Pregunta de Investigación Vinculada:");
+                            egui::ComboBox::from_id_salt("annot_question_selector")
+                                .selected_text(
+                                    outline.questions.iter()
+                                        .find(|q| q.question_id.as_ref() == Some(&self.new_annot_question_id))
+                                        .map(|q| q.text.as_str())
+                                        .unwrap_or("Ninguna")
+                                )
+                                .show_ui(ui, |ui| {
+                                    if ui.selectable_label(self.new_annot_question_id.is_empty(), "Ninguna").clicked() {
+                                        self.new_annot_question_id.clear();
+                                    }
+                                    for q in &outline.questions {
+                                        if let Some(qid) = &q.question_id {
+                                            if ui.selectable_label(&self.new_annot_question_id == qid, &q.text).clicked() {
+                                                self.new_annot_question_id = qid.clone();
+                                            }
+                                        }
+                                    }
+                                });
+                        });
+                    }
+                }
+
+                ui.label("Contenido:");
+                ui.text_edit_multiline(&mut self.new_annot_body);
+
+                if ui.button("💾 Guardar Nota / Evidencia").clicked() {
+                    let body = self.new_annot_body.trim().to_string();
+                    if body.is_empty() {
+                        self.add_toast("El cuerpo de la nota no puede estar vacío", true);
+                    } else if self.new_annot_kind != "NOTE" && self.new_annot_source_kind == "FULLTEXT" && self.new_annot_locator.trim().is_empty() {
+                        self.add_toast("El localizador es obligatorio para evidencia de texto completo (FULLTEXT)", true);
+                    } else {
+                        let locator = if self.new_annot_kind == "NOTE" || self.new_annot_source_kind == "ABSTRACT" {
+                            None
+                        } else {
+                            Some(self.new_annot_locator.trim())
+                        };
+                        let qid = if self.new_annot_question_id.is_empty() { None } else { Some(self.new_annot_question_id.as_str()) };
+                        match crate::research_client::ResearchClient::create_annotation(
+                            &pid,
+                            &target_pub_id,
+                            &self.new_annot_kind,
+                            &body,
+                            &self.new_annot_source_kind,
+                            locator,
+                            qid,
+                        ) {
+                            Ok(_) => {
+                                self.add_toast("Anotación creada exitosamente", false);
+                                self.new_annot_body.clear();
+                                self.new_annot_locator.clear();
+                                self.refresh_active_project_data();
+                            }
+                            Err(e) => {
+                                self.add_toast(format!("Error: {}", e), true);
+                            }
+                        }
+                    }
+                }
+            });
+        } else {
+            ui.label("💡 Selecciona una publicación específica arriba para añadir notas o evidencias.");
+        }
+
+        ui.add_space(8.0);
+        ui.strong(format!("Anotaciones Registradas ({}):", self.annotations_list.len()));
+
+        let annots_to_render = self.annotations_list.clone();
+        egui::ScrollArea::vertical().id_salt("annotations_scroll").max_height(350.0).show(ui, |ui| {
+            for a in &annots_to_render {
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        let kind_badge = match a.kind.as_str() {
+                            "QUOTE" => "💬 CITA",
+                            "PARAPHRASE" => "💡 PARÁFRASIS",
+                            _ => "📝 NOTA",
+                        };
+                        ui.strong(kind_badge);
+
+                        if !a.provenance_badge.is_empty() {
+                            ui.colored_label(egui::Color32::from_rgb(59, 130, 246), format!("[{}]", a.provenance_badge));
+                        }
+
+                        let actor_badge = if a.actor_type == "AGENT" {
+                            format!("🤖 AGENT ({})", a.actor_label)
+                        } else {
+                            format!("👤 HUMAN ({})", a.actor_label)
+                        };
+                        ui.label(actor_badge);
+
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(format!("Rev: {} · {}", a.revision, a.created_at));
+                        });
+                    });
+
+                    ui.label(&a.body);
+
+                    if let Some(loc) = &a.locator {
+                        ui.label(format!("📍 Localizador: {}", loc));
+                    }
+                    if let Some(qid) = &a.question_id {
+                        ui.label(format!("❓ Enlace RQ: {}", qid));
+                    }
+                });
+                ui.add_space(4.0);
+            }
+        });
+    }
+
+    fn render_interchange_tab(&mut self, ui: &mut egui::Ui) {
+        ui.heading("📦 Intercambio: Importación, Exportación y Restauración");
+        ui.label("Importa referencias desde BibTeX, RIS o CSV y exporta proyectos completos o bibliografías.");
+        ui.add_space(6.0);
+
+        if !self.backend_online {
+            ui.colored_label(egui::Color32::from_rgb(239, 68, 68), "⚠️ Servicio local no disponible.");
+            if ui.button("🔄 Reintentar").clicked() {
+                self.refresh_projects();
+            }
+            return;
+        }
+
+        let Some(pid) = self.get_active_project_id() else {
+            ui.label("Selecciona o crea un proyecto para usar el intercambio.");
+            return;
+        };
+
+        ui.columns(2, |cols| {
+            // Import section
+            cols[0].group(|ui| {
+                ui.heading("📥 Importar Referencias a Proyecto");
+                ui.horizontal(|ui| {
+                    ui.label("Formato:");
+                    ui.selectable_value(&mut self.import_file_format, "bib".to_string(), "BibTeX (.bib)");
+                    ui.selectable_value(&mut self.import_file_format, "ris".to_string(), "RIS (.ris)");
+                    ui.selectable_value(&mut self.import_file_format, "csv".to_string(), "CSV RFC4180");
+                });
+
+                ui.label("Contenido del archivo (pegar texto o arrastrar):");
+                ui.text_edit_multiline(&mut self.import_file_content);
+
+                ui.horizontal(|ui| {
+                    if ui.button("🔍 Previsualizar Importación").clicked() {
+                        let content = self.import_file_content.trim();
+                        if content.is_empty() {
+                            self.add_toast("Pega primero el contenido a importar", true);
+                        } else {
+                            match crate::research_client::ResearchClient::preview_import(content, &self.import_file_format) {
+                                Ok(prev) => {
+                                    self.import_preview = Some(prev);
+                                    self.add_toast("Previsualización generada", false);
+                                }
+                                Err(e) => {
+                                    self.add_toast(format!("Error: {}", e), true);
+                                }
+                            }
+                        }
+                    }
+
+                    if ui.button("🧹 Limpiar").clicked() {
+                        self.import_file_content.clear();
+                        self.import_preview = None;
+                    }
+                });
+
+                if let Some(prev) = &self.import_preview {
+                    ui.separator();
+                    ui.strong("Resultado de Previsualización:");
+                    ui.label(format!("Total analizado: {} registros", prev.total_parsed));
+                    ui.colored_label(egui::Color32::from_rgb(34, 197, 94), format!("Válidos: {}", prev.valid_count));
+                    if prev.invalid_count > 0 {
+                        ui.colored_label(egui::Color32::from_rgb(239, 68, 68), format!("Rechazados: {}", prev.invalid_count));
+                    }
+                    ui.label(format!("Caduca: {}", prev.expires_at));
+
+                    if prev.valid_count > 0 {
+                        let prev_id = prev.preview_id.clone();
+                        let f_hash = prev.file_hash.clone();
+                        if ui.button("✅ Confirmar e Incorporar a la Biblioteca").clicked() {
+                            match crate::research_client::ResearchClient::commit_import(&pid, &prev_id, &f_hash) {
+                                Ok(_) => {
+                                    self.add_toast("Importación confirmada e incorporada", false);
+                                    self.import_preview = None;
+                                    self.import_file_content.clear();
+                                    self.refresh_active_project_data();
+                                }
+                                Err(e) => {
+                                    self.add_toast(format!("Error en commit: {}", e), true);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Export section
+            cols[1].group(|ui| {
+                ui.heading("📤 Exportar Proyecto o Bibliografía");
+                ui.horizontal(|ui| {
+                    ui.label("Ámbito (Scope):");
+                    ui.selectable_value(&mut self.export_scope, "ALL".to_string(), "Proyecto Completo");
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("Formato:");
+                    ui.selectable_value(&mut self.export_format, "BIB".to_string(), "BibTeX (.bib)");
+                    ui.selectable_value(&mut self.export_format, "RIS".to_string(), "RIS (.ris)");
+                    ui.selectable_value(&mut self.export_format, "CSV".to_string(), "CSV RFC4180");
+                    ui.selectable_value(&mut self.export_format, "PROJECT_JSON".to_string(), "PROJECT_JSON");
+                });
+
+                if ui.button("📤 Generar Exportación").clicked() {
+                    match crate::research_client::ResearchClient::export_project(&pid, &self.export_scope, &self.export_format) {
+                        Ok(content) => {
+                            self.export_output_text = content;
+                            self.add_toast("Exportación generada", false);
+                        }
+                        Err(e) => {
+                            self.add_toast(format!("Error al exportar: {}", e), true);
+                        }
+                    }
+                }
+
+                if !self.export_output_text.is_empty() {
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        ui.strong("Salida Generada:");
+                        if ui.button("📋 Copiar al Portapapeles").clicked() {
+                            ui.ctx().copy_text(self.export_output_text.clone());
+                            self.add_toast("Exportación copiada al portapapeles", false);
+                        }
+                    });
+                    egui::ScrollArea::both().id_salt("export_output_scroll").max_height(300.0).show(ui, |ui| {
+                        ui.monospace(&self.export_output_text);
+                    });
+                }
+            });
+        });
+    }
+
+    fn render_history_tab(&mut self, ui: &mut egui::Ui) {
+        ui.heading("📜 Historial y Trazabilidad de Auditoría");
+        ui.label("Auditoría append-only de modificaciones del proyecto y ejecuciones de agentes.");
+        ui.add_space(6.0);
+
+        if !self.backend_online {
+            ui.colored_label(egui::Color32::from_rgb(239, 68, 68), "⚠️ Servicio local no disponible.");
+            if ui.button("🔄 Reintentar").clicked() {
+                self.refresh_projects();
+            }
+            return;
+        }
+
+        ui.horizontal(|ui| {
+            if ui.button("🔄 Refrescar Eventos del Proyecto").clicked() {
+                self.refresh_active_project_data();
+            }
+        });
+
+        ui.add_space(6.0);
+        ui.strong(format!("Eventos del Proyecto Activo ({}):", self.project_events.len()));
+
+        let events_to_render = self.project_events.clone();
+        egui::ScrollArea::vertical().id_salt("project_events_scroll").max_height(280.0).show(ui, |ui| {
+            for ev in &events_to_render {
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        let actor_badge = if ev.actor_type == "AGENT" {
+                            format!("🤖 AGENT ({})", ev.actor_label)
+                        } else {
+                            format!("👤 HUMAN ({})", ev.actor_label)
+                        };
+                        ui.colored_label(egui::Color32::from_rgb(168, 85, 247), actor_badge);
+
+                        ui.strong(&ev.action);
+                        ui.label(format!("en {} [{}]", ev.entity_type, ev.entity_id));
+
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(&ev.created_at);
+                        });
+                    });
+                });
+                ui.add_space(2.0);
+            }
+        });
+
+        ui.separator();
+        ui.heading("Auditoría de Consultas MCP / Búsquedas");
+        if ui.button("🔄 Refrescar Consultas").clicked() {
+            self.history = get_recent_history(50);
+        }
+        let history_to_render = self.history.clone();
+        egui::ScrollArea::vertical().id_salt("history_queries_scroll").max_height(200.0).show(ui, |ui| {
+            for rec in &history_to_render {
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.colored_label(egui::Color32::from_rgb(168, 85, 247), &rec.agent_name);
+                        ui.label("en");
+                        ui.strong(&rec.database.to_uppercase());
+                        ui.label(format!("· {} hits ({} ms)", rec.total_hits, rec.execution_time_ms));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(&rec.timestamp);
+                        });
+                    });
+                    ui.monospace(&rec.query);
+                });
+                ui.add_space(2.0);
+            }
+        });
+    }
+
     fn render_connections_tab(&mut self, ui: &mut egui::Ui) {
         ui.heading("Gestión Automatizada de Sesiones y Credenciales");
         ui.label("Captura de credenciales directa desde Firefox y navegación enrutada a través de Burp Suite.");

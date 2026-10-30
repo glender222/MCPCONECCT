@@ -14,6 +14,7 @@ from mcp_server.tools.validation_tools import register_validation_tools
 from mcp_server.tools.auth_tools import register_auth_tools
 from mcp_server.tools.search_tools import register_search_tools
 from mcp_server.tools.export_tools import register_export_tools
+from mcp_server.tools.research_tools import register_research_tools
 from core.http_client import SessionStore
 
 logger = logging.getLogger("mcpconecct.mcp_server")
@@ -42,6 +43,7 @@ def create_server(name: str = "mcpconecct") -> MCPServer:
     register_auth_tools(server)
     register_search_tools(server)
     register_export_tools(server)
+    register_research_tools(server)
 
     # Register Resources
     @server.resource("mcp://status")
