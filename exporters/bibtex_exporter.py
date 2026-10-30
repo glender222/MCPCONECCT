@@ -66,7 +66,13 @@ class BibtexExporter:
             fields.append(f"  pages     = {{{paper['pages']}}},")
         if paper.get("url"):
             fields.append(f"  url       = {{{paper['url']}}},")
-        if paper.get("database"):
+        if paper.get("sources"):
+            srcs = paper.get("sources")
+            src_str = ", ".join(srcs) if isinstance(srcs, list) else str(srcs)
+            fields.append(f"  sources   = {{{src_str}}},")
+        if paper.get("is_enriched_by_doi"):
+            fields.append("  note      = {Enriched via DOI},")
+        elif paper.get("database"):
             fields.append(f"  note      = {{Source: {paper['database']}}},")
 
         body = "\n".join(fields)

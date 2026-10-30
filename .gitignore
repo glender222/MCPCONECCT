@@ -39,14 +39,14 @@ config/auth_store.json
 *.crt
 
 # SQLite Databases & Local Audit Logs
-data/*.db
-data/*.sqlite
-data/*.sqlite3
+data/*.db*
+data/*.sqlite*
 !data/.gitkeep
 
-# Exported files (BibTeX, CSV)
+# Exported files (BibTeX, CSV, RIS)
 exports/*.bib
 exports/*.csv
+exports/*.ris
 !exports/.gitkeep
 
 # IDE & OS

@@ -10,7 +10,7 @@ import html
 import subprocess
 import logging
 
-from platforms.base import AcademicPlatform
+from platforms.base import AcademicPlatform, CanonicalPaper
 from core.query_validator import QueryValidator
 
 logger = logging.getLogger("mcpconecct.platforms.springer")
@@ -22,7 +22,7 @@ class SpringerPlatform(AcademicPlatform):
     def __init__(self):
         super().__init__("springer")
         self.api_url = "https://api.springernature.com/metadata/json"
-        self.web_url = "https://link.springer.com"
+        self.web_url = self.get_base_url("https://link.springer.com")
 
     def _get_api_key(self) -> Optional[str]:
         return self.session_config.get("api_key") or os.getenv("SPRINGER_API_KEY")
@@ -107,18 +107,26 @@ class SpringerPlatform(AcademicPlatform):
                     abstract = rec.get("abstract", "")
                     url = f"https://doi.org/{doi}" if doi else rec.get("url", [{}])[0].get("value", "")
 
-                    papers.append({
-                        "title": title,
-                        "authors": creators,
-                        "year": year,
-                        "doi": doi,
-                        "venue": venue,
-                        "doc_type": doc_type,
-                        "abstract": abstract,
-                        "url": url,
-                        "citation_count": 0,
-                        "database": "SpringerLink",
-                    })
+                    parsed_year = None
+                    if year:
+                        try:
+                            parsed_year = int(str(year).strip())
+                        except Exception:
+                            parsed_year = None
+
+                    paper = CanonicalPaper(
+                        title=title,
+                        authors=creators,
+                        year=parsed_year,
+                        doi=doi,
+                        venue=venue,
+                        doc_type=doc_type,
+                        abstract=abstract or "",
+                        url=url,
+                        sources=["springer"],
+                        citation_count=0,
+                    ).finalize()
+                    papers.append(paper.to_dict())
 
                 return {
                     "total_results": total,
@@ -206,18 +214,26 @@ class SpringerPlatform(AcademicPlatform):
 
                         link_url = f"https://link.springer.com/doi/{doi}" if doi else f"https://doi.org/{doi}"
 
-                        papers.append({
-                            "title": title,
-                            "authors": author_list,
-                            "year": year,
-                            "doi": doi,
-                            "venue": container,
-                            "doc_type": doc_type,
-                            "abstract": abstract,
-                            "url": link_url,
-                            "citation_count": item.get("is-referenced-by-count", 0),
-                            "database": "SpringerLink",
-                        })
+                        parsed_year = None
+                        if year:
+                            try:
+                                parsed_year = int(str(year).strip())
+                            except Exception:
+                                parsed_year = None
+
+                        paper = CanonicalPaper(
+                            title=title,
+                            authors=author_list,
+                            year=parsed_year,
+                            doi=doi,
+                            venue=container,
+                            doc_type=doc_type,
+                            abstract=abstract or "",
+                            url=link_url,
+                            sources=["springer"],
+                            citation_count=item.get("is-referenced-by-count", 0),
+                        ).finalize()
+                        papers.append(paper.to_dict())
 
                     return {
                         "total_results": total,

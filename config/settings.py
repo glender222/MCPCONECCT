@@ -37,3 +37,29 @@ SYNTAX_RULES_FILE = CONFIG_DIR / "syntax_rules.json"
 
 # Supported Databases
 SUPPORTED_DATABASES = ["scopus", "ieee", "wos", "springer"]
+
+
+def get_platform_config(platform: str) -> dict:
+    """Loads configuration for a given platform from auth_store.json."""
+    import json
+    if AUTH_STORE_FILE.exists():
+        try:
+            with open(AUTH_STORE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get(platform.lower(), {})
+        except Exception:
+            pass
+    return {}
+
+
+def get_base_url(platform: str, default: str) -> str:
+    """
+    Returns the effective base URL for a platform, respecting base_url_override
+    for EZProxy or OpenAthens university environments.
+    """
+    cfg = get_platform_config(platform)
+    override = cfg.get("base_url_override")
+    if override and isinstance(override, str) and override.strip():
+        return override.strip().rstrip("/")
+    return default.rstrip("/")
+

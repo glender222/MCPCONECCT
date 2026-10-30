@@ -7,7 +7,7 @@ from typing import Dict, Any, List, Optional
 import os
 import logging
 
-from platforms.base import AcademicPlatform
+from platforms.base import AcademicPlatform, CanonicalPaper
 from core.query_validator import QueryValidator
 
 logger = logging.getLogger("mcpconecct.platforms.wos")
@@ -19,7 +19,7 @@ class WosPlatform(AcademicPlatform):
     def __init__(self):
         super().__init__("wos")
         self.starter_api_url = "https://api.clarivate.com/apis/wos-starter/v1/documents"
-        self.web_url = "https://www.webofscience.com"
+        self.web_url = self.get_base_url("https://www.webofscience.com")
 
     def _get_api_key(self) -> Optional[str]:
         return self.session_config.get("api_key") or os.getenv("WOS_STARTER_API_KEY")
@@ -148,18 +148,26 @@ class WosPlatform(AcademicPlatform):
                     links = hit.get("links", {})
                     record_url = links.get("record", "")
 
-                    papers.append({
-                        "title": title,
-                        "authors": authors,
-                        "year": year,
-                        "doi": doi,
-                        "venue": venue,
-                        "doc_type": doc_type,
-                        "abstract": "",
-                        "url": record_url,
-                        "citation_count": 0,
-                        "database": "Web of Science",
-                    })
+                    parsed_year = None
+                    if year:
+                        try:
+                            parsed_year = int(str(year).strip())
+                        except Exception:
+                            parsed_year = None
+
+                    paper = CanonicalPaper(
+                        title=title,
+                        authors=authors,
+                        year=parsed_year,
+                        doi=doi,
+                        venue=venue,
+                        doc_type=doc_type,
+                        abstract="",
+                        url=record_url,
+                        sources=["wos"],
+                        citation_count=0,
+                    ).finalize()
+                    papers.append(paper.to_dict())
 
                 return {
                     "total_results": total,
@@ -183,18 +191,27 @@ class WosPlatform(AcademicPlatform):
                     records = data.get("records", [])
                     papers = []
                     for rec in records:
-                        papers.append({
-                            "title": rec.get("title", ""),
-                            "authors": rec.get("authors", []),
-                            "year": str(rec.get("year", "")),
-                            "doi": rec.get("doi", ""),
-                            "venue": rec.get("journal", ""),
-                            "doc_type": rec.get("docType", "Article"),
-                            "abstract": rec.get("abstract", ""),
-                            "url": rec.get("url", ""),
-                            "citation_count": rec.get("citations", 0),
-                            "database": "Web of Science",
-                        })
+                        raw_year = rec.get("year", "")
+                        parsed_year = None
+                        if raw_year:
+                            try:
+                                parsed_year = int(str(raw_year).strip())
+                            except Exception:
+                                parsed_year = None
+
+                        paper = CanonicalPaper(
+                            title=rec.get("title", ""),
+                            authors=rec.get("authors", []),
+                            year=parsed_year,
+                            doi=rec.get("doi", ""),
+                            venue=rec.get("journal", ""),
+                            doc_type=rec.get("docType", "Article"),
+                            abstract=rec.get("abstract", "") or "",
+                            url=rec.get("url", ""),
+                            sources=["wos"],
+                            citation_count=rec.get("citations", 0),
+                        ).finalize()
+                        papers.append(paper.to_dict())
                     return {
                         "total_results": total,
                         "page": page,

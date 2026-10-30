@@ -100,6 +100,50 @@ def get_paper_count(
     }
 
 
+def fetch_and_ingest_corpus(
+    database: str,
+    query: str,
+    max_records: int = 50,
+    project_id: str = "default_slr",
+    year_start: Optional[int] = None,
+    year_end: Optional[int] = None,
+    doc_types: Optional[List[str]] = None,
+    enrich_missing_abstracts: bool = True,
+) -> Dict[str, Any]:
+    """
+    Streams, caches, enriches and ingests academic papers directly into the central SQLite corpus.
+    Includes anti-bot pacing, exponential backoff, OpenAlex DOI enrichment, and deduplication.
+    """
+    from core.stream_fetcher import BulkStreamFetcher
+    fetcher = BulkStreamFetcher(
+        database=database,
+        query=query,
+        max_records=max_records,
+        page_size=25,
+        year_start=year_start,
+        year_end=year_end,
+        doc_types=doc_types,
+        project_id=project_id,
+        enrich_missing_abstracts=enrich_missing_abstracts,
+    )
+    return fetcher.execute()
+
+
+def deduplicate_project_corpus(
+    project_id: str = "default_slr",
+    fuzzy_threshold: float = 0.92,
+) -> Dict[str, Any]:
+    """
+    Runs cross-database 2-phase deduplication on all papers stored in the central corpus for a project.
+    Phase 1 matches exact DOI; Phase 2 matches fuzzy title (>=0.92) + year + first author.
+    """
+    from core.deduplicator import CorpusDeduplicator
+    return CorpusDeduplicator.deduplicate_database_corpus(project_id, fuzzy_threshold)
+
+
 def register_search_tools(mcp) -> None:
     mcp.tool()(search_papers)
     mcp.tool()(get_paper_count)
+    mcp.tool()(fetch_and_ingest_corpus)
+    mcp.tool()(deduplicate_project_corpus)
+

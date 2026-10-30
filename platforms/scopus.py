@@ -8,7 +8,7 @@ import os
 import logging
 import httpx
 
-from platforms.base import AcademicPlatform
+from platforms.base import AcademicPlatform, CanonicalPaper
 from core.query_validator import QueryValidator
 
 logger = logging.getLogger("mcpconecct.platforms.scopus")
@@ -20,7 +20,7 @@ class ScopusPlatform(AcademicPlatform):
     def __init__(self):
         super().__init__("scopus")
         self.api_url = "https://api.elsevier.com/content/search/scopus"
-        self.web_url = "https://www.scopus.com"
+        self.web_url = self.get_base_url("https://www.scopus.com")
 
     def _get_api_key(self) -> Optional[str]:
         return self.session_config.get("api_key") or os.getenv("ELSEVIER_API_KEY")
@@ -213,18 +213,26 @@ class ScopusPlatform(AcademicPlatform):
                         if link.get("@ref") == "scopus":
                             url = link.get("@href", "")
 
-                    papers.append({
-                        "title": title,
-                        "authors": [creator] if creator else [],
-                        "year": year,
-                        "doi": doi,
-                        "venue": venue,
-                        "doc_type": doc_type,
-                        "abstract": abstract,
-                        "url": url,
-                        "citation_count": citation_count,
-                        "database": "Scopus",
-                    })
+                    parsed_year = None
+                    if year:
+                        try:
+                            parsed_year = int(str(year).strip())
+                        except Exception:
+                            parsed_year = None
+
+                    paper = CanonicalPaper(
+                        title=title,
+                        authors=[creator] if creator else [],
+                        year=parsed_year,
+                        doi=doi,
+                        venue=venue,
+                        doc_type=doc_type,
+                        abstract=abstract,
+                        url=url,
+                        sources=["scopus"],
+                        citation_count=citation_count,
+                    ).finalize()
+                    papers.append(paper.to_dict())
 
                 return {
                     "total_results": total_results,
@@ -292,18 +300,27 @@ class ScopusPlatform(AcademicPlatform):
                         raw_dt = item.get("documentType", "ar")
                         doc_type_name = DOCTYPE_NAMES.get(raw_dt, raw_dt.capitalize() if raw_dt else "Article")
 
-                        papers.append({
-                            "title": item.get("title", ""),
-                            "authors": authors,
-                            "year": str(item.get("pubYear", "")),
-                            "doi": item.get("doi", ""),
-                            "venue": item.get("source", {}).get("title", ""),
-                            "doc_type": doc_type_name,
-                            "abstract": abstract,
-                            "url": url,
-                            "citation_count": item.get("citations", {}).get("count", 0),
-                            "database": "Scopus",
-                        })
+                        parsed_year = None
+                        raw_year = item.get("pubYear", "")
+                        if raw_year:
+                            try:
+                                parsed_year = int(str(raw_year).strip())
+                            except Exception:
+                                parsed_year = None
+
+                        paper = CanonicalPaper(
+                            title=item.get("title", ""),
+                            authors=authors,
+                            year=parsed_year,
+                            doi=item.get("doi", ""),
+                            venue=item.get("source", {}).get("title", ""),
+                            doc_type=doc_type_name,
+                            abstract=abstract,
+                            url=url,
+                            sources=["scopus"],
+                            citation_count=item.get("citations", {}).get("count", 0),
+                        ).finalize()
+                        papers.append(paper.to_dict())
                     return {
                         "total_results": total,
                         "page": page,

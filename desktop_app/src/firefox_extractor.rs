@@ -37,9 +37,14 @@ pub fn extract_cookies_from_firefox() -> Result<ExtractionResult, String> {
 
     let cookies_sqlite = profile_path.join("cookies.sqlite");
     let cookies_wal = profile_path.join("cookies.sqlite-wal");
+    let cookies_shm = profile_path.join("cookies.sqlite-shm");
 
-    let temp_db = PathBuf::from("/tmp/mcp_ff_cookies.sqlite");
-    let temp_wal = PathBuf::from("/tmp/mcp_ff_cookies.sqlite-wal");
+    let temp_dir = PathBuf::from("/tmp/mcpconecct_ff_sync");
+    let _ = fs::create_dir_all(&temp_dir);
+
+    let temp_db = temp_dir.join("cookies.sqlite");
+    let temp_wal = temp_dir.join("cookies.sqlite-wal");
+    let temp_shm = temp_dir.join("cookies.sqlite-shm");
 
     // Copy to temporary files to avoid locking
     fs::copy(&cookies_sqlite, &temp_db)
@@ -47,11 +52,27 @@ pub fn extract_cookies_from_firefox() -> Result<ExtractionResult, String> {
     if cookies_wal.exists() {
         let _ = fs::copy(&cookies_wal, &temp_wal);
     }
+    if cookies_shm.exists() {
+        let _ = fs::copy(&cookies_shm, &temp_shm);
+    }
 
     let conn = Connection::open(&temp_db)
         .map_err(|e| format!("Error al abrir base de datos SQLite: {}", e))?;
 
+    // Auto-detect ezproxy or openathens domains in cookies
+    let mut detected_proxy_host: Option<String> = None;
+    if let Ok(mut stmt) = conn.prepare("SELECT host FROM moz_cookies WHERE host LIKE '%ezproxy%' OR host LIKE '%openathens%' LIMIT 1") {
+        if let Ok(mut rows) = stmt.query([]) {
+            if let Ok(Some(row)) = rows.next() {
+                if let Ok(h) = row.get::<_, String>(0) {
+                    detected_proxy_host = Some(h.trim_start_matches('.').to_string());
+                }
+            }
+        }
+    }
+
     let query_cookies = |domain_kw: &str| -> Result<serde_json::Map<String, Value>, String> {
+
         let mut map = serde_json::Map::new();
         let sql = format!("SELECT name, value FROM moz_cookies WHERE host LIKE '%{}%'", domain_kw);
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
@@ -107,6 +128,16 @@ pub fn extract_cookies_from_firefox() -> Result<ExtractionResult, String> {
                     }
                     if let Some(wos) = obj.get_mut("wos").and_then(|v| v.as_object_mut()) {
                         wos.insert("status".to_string(), Value::String("no_access".to_string()));
+                    }
+
+                    if let Some(ref proxy_host) = detected_proxy_host {
+                        let full_proxy_url = format!("https://{}", proxy_host);
+                        if let Some(ie) = obj.get_mut("ieee").and_then(|v| v.as_object_mut()) {
+                            let curr = ie.get("base_url_override").and_then(|v| v.as_str()).unwrap_or("");
+                            if curr.is_empty() && proxy_host.contains("ieee") {
+                                ie.insert("base_url_override".to_string(), Value::String(full_proxy_url.clone()));
+                            }
+                        }
                     }
                 }
                 let _ = fs::write(&auth_store_path, serde_json::to_string_pretty(&json_val).unwrap_or_default());

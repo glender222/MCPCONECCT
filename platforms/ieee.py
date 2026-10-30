@@ -7,7 +7,7 @@ from typing import Dict, Any, List, Optional
 import os
 import logging
 
-from platforms.base import AcademicPlatform
+from platforms.base import AcademicPlatform, CanonicalPaper
 from core.query_validator import QueryValidator
 
 logger = logging.getLogger("mcpconecct.platforms.ieee")
@@ -18,7 +18,8 @@ class IeeePlatform(AcademicPlatform):
 
     def __init__(self):
         super().__init__("ieee")
-        self.rest_search_url = "https://ieeexplore.ieee.org/rest/search"
+        base = self.get_base_url("https://ieeexplore.ieee.org")
+        self.rest_search_url = f"{base}/rest/search"
         self.api_url = "https://ieeexploreapi.ieee.org/api/v1/search/articles"
 
     def _get_api_key(self) -> Optional[str]:
@@ -128,18 +129,27 @@ class IeeePlatform(AcademicPlatform):
                 url = f"https://ieeexplore.ieee.org{rec.get('documentLink', '')}"
                 citation_count = rec.get("citationCount", 0)
 
-                papers.append({
-                    "title": title,
-                    "authors": authors,
-                    "year": year,
-                    "doi": doi,
-                    "venue": venue,
-                    "doc_type": doc_type,
-                    "abstract": abstract,
-                    "url": url,
-                    "citation_count": citation_count,
-                    "database": "IEEE Xplore",
-                })
+                parsed_year = None
+                if year:
+                    try:
+                        parsed_year = int(str(year).strip())
+                    except Exception:
+                        parsed_year = None
+
+                paper = CanonicalPaper(
+                    title=title,
+                    authors=authors,
+                    year=parsed_year,
+                    doi=doi,
+                    venue=venue,
+                    doc_type=doc_type,
+                    abstract=abstract,
+                    url=url,
+                    sources=["ieee"],
+                    citation_count=citation_count,
+                ).finalize()
+
+                papers.append(paper.to_dict())
 
             return {
                 "total_results": total_records,

@@ -16,8 +16,15 @@ from core.query_validator import QueryValidator
 from core.query_translator import QueryTranslator
 from core.db import (
     get_search_history, get_query_iterations, save_query_iteration,
-    get_exports, record_search, record_export
+    get_exports, record_search, record_export,
+    get_corpus_papers, get_corpus_summary, get_ingestion_job, get_recent_ingestion_jobs
 )
+from core.http_client import diagnose_platform_session
+from core.stream_fetcher import BulkStreamFetcher
+from core.deduplicator import CorpusDeduplicator
+from core.enricher import MetadataEnricher
+from exporters.ris_exporter import RisExporter
+from exporters.citation_formatter import CitationFormatter
 from core.audit import AgentAuditor
 from platforms import get_platform, PLATFORMS
 
@@ -337,5 +344,137 @@ def download_file(filename: str):
     path = settings.EXPORTS_DIR / safe_name
     if not path.exists():
         raise HTTPException(status_code=404, detail="File not found")
-    media_type = "application/x-bibtex" if safe_name.endswith(".bib") else "text/csv"
+    media_type = "application/x-bibtex" if safe_name.endswith(".bib") else ("application/x-research-info-systems" if safe_name.endswith(".ris") else "text/csv")
     return FileResponse(path, filename=safe_name, media_type=media_type)
+
+
+# --- Diagnostics & Corpus Pipeline Endpoints ---
+
+@router.get("/connections/diagnose")
+def diagnose_all_connections():
+    """Runs health and WAF probes for all platforms."""
+    results = {}
+    for db in ["ieee", "scopus", "springer", "wos"]:
+        results[db] = diagnose_platform_session(db)
+    return {
+        "status": "success",
+        "timestamp": time.time(),
+        "diagnostics": results,
+    }
+
+
+class CorpusIngestRequest(BaseModel):
+    database: str
+    query: str
+    max_records: int = 50
+    page_size: int = 25
+    project_id: str = "default_slr"
+    year_start: Optional[int] = None
+    year_end: Optional[int] = None
+    doc_types: Optional[List[str]] = None
+    enrich_missing_abstracts: bool = True
+    background: bool = False
+
+
+@router.post("/corpus/ingest")
+def ingest_corpus(req: CorpusIngestRequest, bg_tasks: BackgroundTasks):
+    fetcher = BulkStreamFetcher(
+        database=req.database,
+        query=req.query,
+        max_records=req.max_records,
+        page_size=req.page_size,
+        year_start=req.year_start,
+        year_end=req.year_end,
+        doc_types=req.doc_types,
+        project_id=req.project_id,
+        enrich_missing_abstracts=req.enrich_missing_abstracts,
+    )
+    if req.background:
+        bg_tasks.add_task(fetcher.execute)
+        return {"job_id": fetcher.job_id, "status": "RUNNING", "message": "Bulk ingestion started in background."}
+    else:
+        res = fetcher.execute()
+        return res
+
+
+@router.get("/corpus/jobs/{job_id}")
+def get_job_status(job_id: str):
+    job = get_ingestion_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@router.get("/corpus/jobs")
+def list_jobs(limit: int = 20):
+    return get_recent_ingestion_jobs(limit=limit)
+
+
+class CorpusDeduplicateRequest(BaseModel):
+    project_id: str = "default_slr"
+    fuzzy_threshold: float = 0.92
+
+
+@router.post("/corpus/deduplicate")
+def deduplicate_corpus_endpoint(req: CorpusDeduplicateRequest):
+    return CorpusDeduplicator.deduplicate_database_corpus(
+        project_id=req.project_id,
+        fuzzy_threshold=req.fuzzy_threshold
+    )
+
+
+class CorpusEnrichRequest(BaseModel):
+    project_id: str = "default_slr"
+    batch_limit: int = 50
+
+
+@router.post("/corpus/enrich")
+def enrich_corpus_endpoint(req: CorpusEnrichRequest):
+    return MetadataEnricher.enrich_corpus_in_db(
+        project_id=req.project_id,
+        batch_limit=req.batch_limit
+    )
+
+
+@router.get("/corpus/papers")
+def list_corpus_papers(
+    project_id: str = "default_slr",
+    limit: int = 100,
+    offset: int = 0,
+    prisma_stage: Optional[str] = None
+):
+    papers = get_corpus_papers(
+        project_id=project_id,
+        limit=limit,
+        offset=offset,
+        prisma_stage=prisma_stage
+    )
+    summary = get_corpus_summary(project_id=project_id)
+    return {
+        "project_id": project_id,
+        "count": len(papers),
+        "summary": summary,
+        "papers": papers,
+    }
+
+
+class CorpusExportRequest(BaseModel):
+    project_id: str = "default_slr"
+    format: str = "bibtex"
+    citation_style: Optional[str] = None
+    output_filename: Optional[str] = None
+
+
+@router.post("/corpus/export")
+def export_corpus_endpoint(req: CorpusExportRequest):
+    from mcp_server.tools.export_tools import export_corpus_file
+    try:
+        return export_corpus_file(
+            project_id=req.project_id,
+            format=req.format,
+            citation_style=req.citation_style,
+            output_filename=req.output_filename
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+

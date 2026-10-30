@@ -1,5 +1,7 @@
 {
   "ieee": {
+    "auth_mode": "cookies",
+    "base_url_override": "",
     "api_key": "",
     "auth_type": "cookies_and_headers",
     "cookies": {},
@@ -9,6 +11,8 @@
     "enabled": true
   },
   "scopus": {
+    "auth_mode": "cookies",
+    "base_url_override": "",
     "api_key": "",
     "inst_token": "",
     "auth_type": "cookies_and_headers",
@@ -19,6 +23,8 @@
     "enabled": true
   },
   "springer": {
+    "auth_mode": "public",
+    "base_url_override": "",
     "api_key": "",
     "auth_type": "open_access",
     "cookies": {},
@@ -26,6 +32,8 @@
     "enabled": true
   },
   "wos": {
+    "auth_mode": "api_key",
+    "base_url_override": "",
     "api_key": "",
     "auth_type": "disabled",
     "cookies": {},

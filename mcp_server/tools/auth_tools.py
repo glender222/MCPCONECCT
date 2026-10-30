@@ -132,6 +132,8 @@ def get_database_status() -> Dict[str, Any]:
             "cookies_count": len(session_data.get("cookies", {})),
             "has_api_key": bool(session_data.get("api_key") or getattr(adapter, "_get_api_key", lambda: None)()),
             "headers": list(session_data.get("headers", {}).keys()),
+            "base_url_override": session_data.get("base_url_override", ""),
+            "auth_mode": session_data.get("auth_mode", "cookies"),
         }
 
     return {
@@ -142,9 +144,28 @@ def get_database_status() -> Dict[str, Any]:
     }
 
 
+def diagnose_all_connections() -> Dict[str, Any]:
+    """
+    Runs diagnostic health probes on all 4 academic platforms (IEEE, Scopus, Springer, WoS),
+    detecting WAF challenges, institutional login redirections, and session validity.
+    """
+    from datetime import datetime
+    from core.http_client import diagnose_platform_session
+    results = {}
+    for db in ["ieee", "scopus", "springer", "wos"]:
+        results[db] = diagnose_platform_session(db)
+    return {
+        "status": "success",
+        "timestamp": datetime.now().isoformat(),
+        "diagnostics": results,
+    }
+
+
 def register_auth_tools(mcp) -> None:
     mcp.tool()(configure_auth)
     mcp.tool()(import_curl)
     mcp.tool()(configure_burp_proxy)
     mcp.tool()(test_connection)
     mcp.tool()(get_database_status)
+    mcp.tool()(diagnose_all_connections)
+

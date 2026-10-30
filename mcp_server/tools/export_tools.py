@@ -11,7 +11,10 @@ from config import settings
 from platforms import get_platform
 from exporters.bibtex_exporter import BibtexExporter
 from exporters.csv_exporter import CsvExporter
+from exporters.ris_exporter import RisExporter
+from exporters.citation_formatter import CitationFormatter
 from core.audit import AgentAuditor
+from core.db import get_corpus_papers
 
 
 def export_search_results(
@@ -32,8 +35,8 @@ def export_search_results(
     """
     start_time = time.time()
     fmt = format.lower().strip()
-    if fmt not in ("bibtex", "csv", "bib"):
-        raise ValueError(f"Unsupported format '{format}'. Supported formats: 'bibtex', 'csv'.")
+    if fmt not in ("bibtex", "csv", "bib", "ris"):
+        raise ValueError(f"Unsupported format '{format}'. Supported formats: 'bibtex', 'csv', 'ris'.")
 
     platform = get_platform(database)
 
@@ -51,7 +54,7 @@ def export_search_results(
         papers = search_res.get("papers", [])
 
         # Generate filename if not provided
-        ext = "bib" if "bib" in fmt else "csv"
+        ext = "bib" if "bib" in fmt else ("ris" if "ris" in fmt else "csv")
         if not output_filename:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_db = re.sub(r'[^a-zA-Z0-9]', '', database.lower())
@@ -65,6 +68,8 @@ def export_search_results(
         # Perform export
         if ext == "bib":
             BibtexExporter.export(papers, dest_path)
+        elif ext == "ris":
+            RisExporter.export(papers, dest_path)
         else:
             CsvExporter.export(papers, dest_path)
 
@@ -127,5 +132,75 @@ def export_search_results(
         raise
 
 
+def export_corpus_file(
+    project_id: str = "default_slr",
+    format: str = "bibtex",
+    citation_style: Optional[str] = None,
+    output_filename: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Exports clean, deduplicated papers from the central corpus_papers table
+    into standard academic formats: BibTeX (.bib), CSV (.csv), RIS (.ris), or formatted citations (.txt).
+
+    Args:
+        project_id: Project identifier (defaults to 'default_slr').
+        format: Export format ('bibtex', 'csv', 'ris', 'txt').
+        citation_style: Citation style for .txt exports ('ieee', 'apa7', 'bibitem').
+        output_filename: Optional custom output filename.
+    """
+    fmt = format.lower().strip()
+    if fmt not in ("bibtex", "csv", "ris", "bib", "txt"):
+        raise ValueError(f"Unsupported format '{format}'. Choose from 'bibtex', 'csv', 'ris', 'txt'.")
+
+    papers = get_corpus_papers(project_id=project_id, limit=10000)
+    if not papers:
+        return {
+            "status": "empty",
+            "project_id": project_id,
+            "message": "No papers found in corpus for this project.",
+            "records_exported": 0,
+        }
+
+    ext = "bib" if "bib" in fmt else ("ris" if "ris" in fmt else ("csv" if fmt == "csv" else "txt"))
+    if not output_filename:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_filename = f"corpus_{project_id}_{timestamp}.{ext}"
+
+    if not output_filename.endswith(f".{ext}"):
+        output_filename = f"{output_filename}.{ext}"
+
+    dest_path = settings.EXPORTS_DIR / output_filename
+
+    if ext == "bib":
+        BibtexExporter.export(papers, dest_path)
+    elif ext == "csv":
+        CsvExporter.export(papers, dest_path)
+    elif ext == "ris":
+        RisExporter.export(papers, dest_path)
+    elif ext == "txt":
+        style = (citation_style or "ieee").lower()
+        formatted_lines = [CitationFormatter.format_paper(p, style=style, index=i + 1) for i, p in enumerate(papers)]
+        dest_path.write_text("\n\n".join(formatted_lines), encoding="utf-8")
+
+    AgentAuditor.log_export(
+        filename=output_filename,
+        format_type=ext,
+        database="corpus",
+        record_count=len(papers),
+        file_path=str(dest_path),
+    )
+
+    return {
+        "status": "success",
+        "project_id": project_id,
+        "file_path": str(dest_path),
+        "filename": output_filename,
+        "format": ext,
+        "records_exported": len(papers),
+    }
+
+
 def register_export_tools(mcp) -> None:
     mcp.tool()(export_search_results)
+    mcp.tool()(export_corpus_file)
+
